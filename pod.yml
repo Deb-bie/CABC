@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cabc-train-pod
+spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 100
+    fsGroup: 100
+  containers:
+  - name: cabc-processing
+    image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
+    env:
+    - name: REPO_PATH
+      value: /opt/repo/CABC
+    command:
+    - "bash"
+    - "-c"
+    args:
+    - |
+      # --- User and Environment Setup ---
+      echo "Running as user: $(whoami), UID: $(id -u), GID: $(id -g)"
+      # --- Git Repository Setup ---
+      echo "Setting up Git repository..."
+      cd ${REPO_PATH}
+      git pull origin main || echo "Repository already exists, continuing"
+      # --- Install dependencies ---
+      echo "Installing required dependencies..."
+      # pip install dominate visdom wandb
+      # --- Clone CycleGAN repository ---
+      echo "Cloning CABC repository..."
+      git clone https://github.com/Deb-bie/CABC.git
+      # --- Install CycleGAN requirements ---
+      # echo "Installing CycleGAN requirements..."
+      # pip install -r ${REPO_PATH}/pytorch-CycleGAN-and-pix2pix/requirements.txt
+      sleep infinity
+      
+    volumeMounts:
+    - name: git-repo
+      mountPath: /opt/repo
+    - name: cabc-data-volume
+      mountPath: /data
+    resources:
+      limits:
+        memory: 12Gi
+        cpu: "12"
+        nvidia.com/gpu: "1"
+      requests:
+        memory: 10Gi
+        cpu: "10"
+        nvidia.com/gpu: "1"
+  initContainers:
+  - name: init-git-repo
+    image: alpine/git
+    args:
+    - clone
+    - --single-branch
+    - -b
+    - main
+    - https://github.com/Deb-bie/CABC.git
+    - /opt/repo/CABC
+    volumeMounts:
+    - name: git-repo
+      mountPath: /opt/repo
+    resources:
+      limits:
+        memory: 600Mi
+        cpu: 600m
+      requests:
+        memory: 500Mi
+        cpu: 500m
+  volumes:
+  - name: git-repo
+    emptyDir: {}
+  - name: cabc-data-volume
+    persistentVolumeClaim:
+      claimName: cabc-data
+  restartPolicy: Never
