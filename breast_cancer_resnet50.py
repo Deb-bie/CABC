@@ -102,14 +102,22 @@ print(f" Data loaded")
 # Data Normalizations
 X_data = np.array(data) / 255
 
+print(f"X_data")
+
 # Reshape the graysclae images to 128x128x1
 X_data = X_data.reshape(-1, img_size, img_size, 1)
+
+print(f"X_data reshape")
 
 # Convert grayscale to RGB by duplicating the single channel 3 times
 X_data = np.repeat(X_data, 3, axis=-1)
 
+print(f"X_data rgb")
+
 # Convert labels to numpy arrays
 y_data = np.array(data_labels)
+
+print(f"y_data labels")
 
 print(f" X_data shape {X_data.shape}")  # This should now show (num_samples, 128, 128, 3)
 
