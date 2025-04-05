@@ -99,27 +99,52 @@ print(f" Data loaded")
 # # plt.show(block=False)
 # plt.savefig("img1")
 
-# Data Normalizations
-X_data = np.array(data) / 255
 
-print(f"X_data")
+def data_preprocessing(data, data_labels):
+    # Data Normalizations
+    X_data = np.array(data) / 255
+    print(f"X_data")
 
-# Reshape the graysclae images to 128x128x1
-X_data = X_data.reshape(-1, img_size, img_size, 1)
+    # Reshape the graysclae images to 128x128x1
+    X_data = X_data.reshape(-1, img_size, img_size, 1)
+    print(f"X_data reshape")
 
-print(f"X_data reshape")
+    # Convert grayscale to RGB by duplicating the single channel 3 times
+    X_data = np.repeat(X_data, 3, axis=-1)
+    print(f"X_data rgb")
+
+    # Convert labels to numpy arrays
+    y_data = np.array(data_labels)
+    print(f"y_data labels")
+    print(f" X_data shape {X_data.shape}")  # This should now show (num_samples, 128, 128, 3)
+
+    return X_data, y_data
+
+X_data, y_data = data_preprocessing(data, data_labels)
+
+     
+
+# # Data Normalizations
+# X_data = np.array(data) / 255
+
+# print(f"X_data")
+
+# # Reshape the graysclae images to 128x128x1
+# X_data = X_data.reshape(-1, img_size, img_size, 1)
+
+# print(f"X_data reshape")
 
 # Convert grayscale to RGB by duplicating the single channel 3 times
-X_data = np.repeat(X_data, 3, axis=-1)
+# X_data = np.repeat(X_data, 3, axis=-1)
 
-print(f"X_data rgb")
+# print(f"X_data rgb")
 
 # Convert labels to numpy arrays
-y_data = np.array(data_labels)
+# y_data = np.array(data_labels)
 
-print(f"y_data labels")
+# print(f"y_data labels")
 
-print(f" X_data shape {X_data.shape}")  # This should now show (num_samples, 128, 128, 3)
+# print(f" X_data shape {X_data.shape}")  # This should now show (num_samples, 128, 128, 3)
 
 # train-validation split on the data
 # val_size = 0.2
@@ -130,105 +155,265 @@ print(f" X_data shape {X_data.shape}")  # This should now show (num_samples, 128
 #     random_state=42
 # )
 
-X_train, X_temp, y_train, y_temp = train_test_split(
-    X_data, 
-    y_data, 
-    test_size=0.3, 
-    random_state=42
-)
 
-# split temp into val and test
-X_val, X_test, y_val, y_test = train_test_split(
-    X_temp, 
-    y_temp, 
-    test_size=0.5, 
-    random_state=42
-)
+def data_split(X_data, y_data):
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X_data, 
+        y_data, 
+        test_size=0.3, 
+        random_state=42
+    )
 
-# Check the shapes
-print("Training data shape:", X_train.shape)
-print("Validation data shape:", X_val.shape)
-print("Test data shape:", X_test.shape)
-print("Training labels shape:", y_train.shape)
-print("Validation labels shape:", y_val.shape)
-print("Test labels shape:", y_test.shape)
+    # split temp into val and test
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_temp, 
+        y_temp, 
+        test_size=0.5, 
+        random_state=42
+    )
 
+    # Check the shapes
+    print(f"Training data shape: {X_train.shape}")
+    print(f"Validation data shape: {X_val.shape}")
+    print(f"Test data shape: {X_test.shape}")
+    print(f"Training labels shape: {y_train.shape}")
+    print(f"Validation labels shape: {y_val.shape}")
+    print(f"Test labels shape: {y_test.shape}")
 
-
-# Data Augmentation
-data_generator = ImageDataGenerator(  
-                    rotation_range = 30,
-                    zoom_range = 0.2, 
-                    width_shift_range=0.1,  
-                    height_shift_range=0.1,  
-                    horizontal_flip = True,  
-                    shear_range=0.2,
-                    fill_mode='nearest',
-                 )
-
-val_data = ImageDataGenerator()
-
-data_generator.fit(X_train)
-val_data.fit(X_val)
+    return X_train, X_val, X_test, y_train, y_val, y_test
+     
 
 
-train_gen = data_generator.flow(X_train, y_train, batch_size=32)
-val_gen = val_data.flow(X_val, y_val, batch_size=32)
+
+X_train, X_val, X_test, y_train, y_val , y_test = data_split(X_data, y_data)
+
+
+# X_train, X_temp, y_train, y_temp = train_test_split(
+#     X_data, 
+#     y_data, 
+#     test_size=0.3, 
+#     random_state=42
+# )
+
+# # split temp into val and test
+# X_val, X_test, y_val, y_test = train_test_split(
+#     X_temp, 
+#     y_temp, 
+#     test_size=0.5, 
+#     random_state=42
+# )
+
+# # Check the shapes
+# print("Training data shape:", X_train.shape)
+# print("Validation data shape:", X_val.shape)
+# print("Test data shape:", X_test.shape)
+# print("Training labels shape:", y_train.shape)
+# print("Validation labels shape:", y_val.shape)
+# print("Test labels shape:", y_test.shape)
+
+
+
+def data_augmentation(X_train, X_val):
+    # Data Augmentation
+    data_generator = ImageDataGenerator(
+        rotation_range = 30,
+        zoom_range = 0.2,
+        width_shift_range=0.1,
+        height_shift_range=0.1,
+        horizontal_flip = True,
+        shear_range=0.2,
+        fill_mode='nearest'
+    )
+
+    val_data = ImageDataGenerator()
+
+    data_generator.fit(X_train)
+    val_data.fit(X_val)
+
+    train_gen = data_generator.flow(X_train, y_train, batch_size=32)
+    val_gen = val_data.flow(X_val, y_val, batch_size=32)
+
+    return train_gen, val_gen
+
+
+train_gen, val_gen = data_augmentation(X_train, X_val)
+
+
+
+
+
+# # Data Augmentation
+# data_generator = ImageDataGenerator(  
+#                     rotation_range = 30,
+#                     zoom_range = 0.2, 
+#                     width_shift_range=0.1,  
+#                     height_shift_range=0.1,  
+#                     horizontal_flip = True,  
+#                     shear_range=0.2,
+#                     fill_mode='nearest',
+#                  )
+
+# val_data = ImageDataGenerator()
+
+# data_generator.fit(X_train)
+# val_data.fit(X_val)
+
+
+# train_gen = data_generator.flow(X_train, y_train, batch_size=32)
+# val_gen = val_data.flow(X_val, y_val, batch_size=32)
+
+
+
+def train_model(train_gen, val_gen, X_test, y_test):
+    resnet_model = Sequential()
+    pretrained_model= tf.keras.applications.ResNet50(
+        include_top=False, 
+        input_shape=(img_size, img_size, 3), 
+        pooling='avg', 
+        weights='imagenet'
+    )
+
+    for layer in pretrained_model.layers:
+        layer.trainable=False
+    
+    resnet_model.add(pretrained_model)
+
+    # Fully connected layers for classification
+    resnet_model.add(layers.Flatten())
+    resnet_model.add(layers.Dense(512, activation='relu'))
+    resnet_model.add(layers.Dense(1, activation='sigmoid'))
+
+    # compile and train the model
+    resnet_model.compile(
+        optimizer='adam', 
+        loss='binary_crossentropy', 
+        metrics=['accuracy']
+    )
+
+    checkpoint = ModelCheckpoint(
+        "resnet_1.h5", 
+        monitor='val_accuracy', 
+        verbose=1, 
+        save_best_only=True, 
+        save_weights_only=False, 
+        mode='max', 
+        save_freq=10
+    )
+    
+    early = EarlyStopping(
+        monitor='val_accuracy', 
+        min_delta=0, 
+        patience=20, 
+        verbose=1, 
+        mode='max'
+    )
+    
+    resnet_model.fit(
+        train_gen,
+        batch_size=32,
+        validation_data= val_gen, 
+        validation_steps=32,
+        epochs=10,
+        callbacks=[checkpoint,early]
+    )
+
+    history = resnet_model.history.history  # Access the 'history' dictionary
+
+    train_acc = history['accuracy']
+    train_loss = history['loss']
+    val_acc = history['val_accuracy']
+    val_loss = history['val_loss']
+
+    # Epochs
+    epochs = range(1, len(train_acc) + 1)
+
+    evaluation = resnet_model.evaluate(X_test,y_test)
+    print("=="*20)
+    print(evaluation)
+    print(f"Accuracy - {evaluation[1]*100}%")
+    print(f"Loss - {evaluation[0]}")
+    print("=="*20)
+
+    predictions = resnet_model.predict(X_test)
+    predictions = (predictions > 0.5).astype(int)  # Convert probabilities to binary labels
+
+    # Print the classification report
+    print("Classification Report:")
+    # print(classification_report(y_test, predictions, target_names=['Benign', 'Malignant cancer']))
+
+    # Generate the confusion matrix
+    cm = confusion_matrix(y_test, predictions)
+
+
+model = train_model(train_gen, val_gen, X_test, y_test)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #ResNet code
-resnet_model = Sequential()
-pretrained_model= tf.keras.applications.ResNet50(include_top=False, 
-                                                 input_shape=(img_size, img_size, 3), 
-                                                 pooling='avg', 
-                                                 weights='imagenet')
-for layer in pretrained_model.layers:
-        layer.trainable=False
-resnet_model.add(pretrained_model)
+# resnet_model = Sequential()
+# pretrained_model= tf.keras.applications.ResNet50(include_top=False, 
+#                                                  input_shape=(img_size, img_size, 3), 
+#                                                  pooling='avg', 
+#                                                  weights='imagenet')
+# for layer in pretrained_model.layers:
+#         layer.trainable=False
+# resnet_model.add(pretrained_model)
 
 
-# Fully connected layers for classification
-resnet_model.add(layers.Flatten())
-resnet_model.add(layers.Dense(512, activation='relu'))
-resnet_model.add(layers.Dense(1, activation='sigmoid'))
+# # Fully connected layers for classification
+# resnet_model.add(layers.Flatten())
+# resnet_model.add(layers.Dense(512, activation='relu'))
+# resnet_model.add(layers.Dense(1, activation='sigmoid'))
 
 
-# compile and train the model
+# # compile and train the model
 
 
-resnet_model.compile(optimizer='adam', 
-                     loss='binary_crossentropy', 
-                     metrics=['accuracy'])
+# resnet_model.compile(optimizer='adam', 
+#                      loss='binary_crossentropy', 
+#                      metrics=['accuracy'])
 
 
 
-checkpoint = ModelCheckpoint(
-    "resnet_1.h5", 
-    monitor='val_accuracy', 
-    verbose=1, 
-    save_best_only=True, 
-    save_weights_only=False, 
-    mode='max', 
-    save_freq=10
-)
+# checkpoint = ModelCheckpoint(
+#     "resnet_1.h5", 
+#     monitor='val_accuracy', 
+#     verbose=1, 
+#     save_best_only=True, 
+#     save_weights_only=False, 
+#     mode='max', 
+#     save_freq=10
+# )
 
-early = EarlyStopping(
-    monitor='val_accuracy', 
-    min_delta=0, 
-    patience=20, 
-    verbose=1, 
-    mode='max'
-)
+# early = EarlyStopping(
+#     monitor='val_accuracy', 
+#     min_delta=0, 
+#     patience=20, 
+#     verbose=1, 
+#     mode='max'
+# )
 
 
-resnet_model.fit(
-    train_gen,
-    batch_size=32,
-    validation_data= val_gen, 
-    validation_steps=32,
-    epochs=10,
-    callbacks=[checkpoint,early]
-)
+# resnet_model.fit(
+#     train_gen,
+#     batch_size=32,
+#     validation_data= val_gen, 
+#     validation_steps=32,
+#     epochs=10,
+#     callbacks=[checkpoint,early]
+# )
 
 
 # history = resnet_model.fit(X_train, 
@@ -239,15 +424,15 @@ resnet_model.fit(
 
 
 # Retrieve metrics from the training history
-history = resnet_model.history.history  # Access the 'history' dictionary
+# history = resnet_model.history.history  # Access the 'history' dictionary
 
-train_acc = history['accuracy']
-train_loss = history['loss']
-val_acc = history['val_accuracy']
-val_loss = history['val_loss']
+# train_acc = history['accuracy']
+# train_loss = history['loss']
+# val_acc = history['val_accuracy']
+# val_loss = history['val_loss']
 
-# Epochs
-epochs = range(1, len(train_acc) + 1)
+# # Epochs
+# epochs = range(1, len(train_acc) + 1)
 
 
 # Create a figure and axes for the plots
@@ -276,21 +461,21 @@ epochs = range(1, len(train_acc) + 1)
 # # plt.show(block=False)
 # plt.savefig("img2")
 
-evaluation = resnet_model.evaluate(X_test,y_test)
-print("=="*20)
-print(evaluation)
-print(f"Accuracy - {evaluation[1]*100}%")
-print(f"Loss - {evaluation[0]}")
-print("=="*20)
+# evaluation = resnet_model.evaluate(X_test,y_test)
+# print("=="*20)
+# print(evaluation)
+# print(f"Accuracy - {evaluation[1]*100}%")
+# print(f"Loss - {evaluation[0]}")
+# print("=="*20)
 
 
 
-predictions = resnet_model.predict(X_test)
-predictions = (predictions > 0.5).astype(int)  # Convert probabilities to binary labels
+# predictions = resnet_model.predict(X_test)
+# predictions = (predictions > 0.5).astype(int)  # Convert probabilities to binary labels
 
-# Print the classification report
-print("Classification Report:")
-print(classification_report(y_test, predictions, target_names=['Benign', 'Malignant cancer']))
+# # Print the classification report
+# print("Classification Report:")
+# print(classification_report(y_test, predictions, target_names=['Benign', 'Malignant cancer']))
 
 
 # # Function to plot confusion matrix with percentages
@@ -312,8 +497,8 @@ print(classification_report(y_test, predictions, target_names=['Benign', 'Malign
 #     plt.savefig("img3")
 
 
-# Generate the confusion matrix
-cm = confusion_matrix(y_test, predictions)
+# # Generate the confusion matrix
+# cm = confusion_matrix(y_test, predictions)
 
 # Plot the confusion matrix with percentages
 # plot_confusion_matrix_with_percentages(cm, "Resnet50")
