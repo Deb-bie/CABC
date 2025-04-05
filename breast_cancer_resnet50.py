@@ -87,7 +87,7 @@ plt.suptitle(
 # Adjust layout for better spacing
 plt.tight_layout()
 # plt.show(block=False)
-plt.savefig()
+plt.savefig("img1")
 
 # Data Normalizations
 X_data = np.array(data) / 255
@@ -256,7 +256,7 @@ ax[1].grid(True)
 # Display the plots
 plt.tight_layout()
 # plt.show(block=False)
-plt.savefig()
+plt.savefig("img2")
 
 evaluation = resnet_model.evaluate(X_test,y_test)
 print("=="*20)
@@ -291,7 +291,7 @@ def plot_confusion_matrix_with_percentages(cm, model_name):
     plt.xlabel("Predicted", fontsize=14)
     plt.ylabel("True", fontsize=14)
     # plt.show(block=False)
-    plt.savefig()
+    plt.savefig("img3")
 
 
 # Generate the confusion matrix
@@ -330,4 +330,4 @@ plt.tight_layout()
 
 # Show the plot
 # plt.show(block=False)
-plt.savefig()
+plt.savefig("img4")
