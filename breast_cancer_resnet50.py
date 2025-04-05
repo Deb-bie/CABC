@@ -25,9 +25,6 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix
 
 
-
-
-
 data_path = "../../../data/BreaKHis_Total_dataset"
 
 # Image labels
@@ -89,7 +86,8 @@ plt.suptitle(
 
 # Adjust layout for better spacing
 plt.tight_layout()
-plt.show()
+# plt.show(block=False)
+plt.savefig()
 
 # Data Normalizations
 X_data = np.array(data) / 255
@@ -215,10 +213,10 @@ resnet_model.fit(
 )
 
 
-history = resnet_model.fit(X_train, 
-                           validation_data=X_val, 
-                           epochs=10, 
-                           batch_size=32)
+# history = resnet_model.fit(X_train, 
+#                            validation_data=X_val, 
+#                            epochs=10, 
+#                            batch_size=32)
 
 
 
@@ -257,7 +255,8 @@ ax[1].grid(True)
 
 # Display the plots
 plt.tight_layout()
-plt.show()
+# plt.show(block=False)
+plt.savefig()
 
 evaluation = resnet_model.evaluate(X_test,y_test)
 print("=="*20)
@@ -291,7 +290,8 @@ def plot_confusion_matrix_with_percentages(cm, model_name):
     plt.title(f"Confusion Matrix - {model_name}", fontsize=16)
     plt.xlabel("Predicted", fontsize=14)
     plt.ylabel("True", fontsize=14)
-    plt.show()
+    # plt.show(block=False)
+    plt.savefig()
 
 
 # Generate the confusion matrix
@@ -329,4 +329,5 @@ plt.suptitle("Sample Test Images with Predictions", size=18)
 plt.tight_layout()
 
 # Show the plot
-plt.show()
+# plt.show(block=False)
+plt.savefig()
