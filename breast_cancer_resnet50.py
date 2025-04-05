@@ -39,7 +39,15 @@ def loading_data(data_dir):
         path = os.path.join(data_dir, label)
         class_num = labels.index(label)
 
-        for img in os.listdir(path):
+        files = os.listdir(path)
+        total_files = len(files)
+
+        print(f"Loading {label} images ({total_files} files)")
+
+        for i, img in enumerate(files):
+            if i % 100 == 0:
+                print(f" Progress: {i}/{total_files}")
+
             img_path = os.path.join(path, img)
             img_arr = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
 
@@ -57,37 +65,39 @@ def loading_data(data_dir):
 # Load data
 data, data_labels = loading_data(data_path)
 
+print(f" Data loaded")
 
-# load random data
-random_indices = np.random.choice(len(data), 6, replace=False)
 
-#Set up the figure
-plt.figure(figsize=(8,8))
+# # load random data
+# random_indices = np.random.choice(len(data), 6, replace=False)
 
-# Plot the images
-for i, index in enumerate(random_indices):
-    plt.subplot(3, 3, i+1)
-    plt.imshow(data[index], cmap='gray')
-    plt.title(
-        'Benign' if data_labels[index] == 0 else 'Malignant cancer',
-        fontsize=14,
-        fontweight='bold',
-        color='blue' if data_labels[index] == 0 else 'green'
-    )
-    plt.axis('off')
+# #Set up the figure
+# plt.figure(figsize=(8,8))
 
-# Add a main title
-plt.suptitle(
-    "Random Sample of Breast tumors images",
-    fontsize=18,
-    fontweight='bold',
-    y=1.02
-)
+# # Plot the images
+# for i, index in enumerate(random_indices):
+#     plt.subplot(3, 3, i+1)
+#     plt.imshow(data[index], cmap='gray')
+#     plt.title(
+#         'Benign' if data_labels[index] == 0 else 'Malignant cancer',
+#         fontsize=14,
+#         fontweight='bold',
+#         color='blue' if data_labels[index] == 0 else 'green'
+#     )
+#     plt.axis('off')
 
-# Adjust layout for better spacing
-plt.tight_layout()
-# plt.show(block=False)
-plt.savefig("img1")
+# # Add a main title
+# plt.suptitle(
+#     "Random Sample of Breast tumors images",
+#     fontsize=18,
+#     fontweight='bold',
+#     y=1.02
+# )
+
+# # Adjust layout for better spacing
+# plt.tight_layout()
+# # plt.show(block=False)
+# plt.savefig("img1")
 
 # Data Normalizations
 X_data = np.array(data) / 255
@@ -101,7 +111,7 @@ X_data = np.repeat(X_data, 3, axis=-1)
 # Convert labels to numpy arrays
 y_data = np.array(data_labels)
 
-print(X_data.shape)  # This should now show (num_samples, 128, 128, 3)
+print(f" X_data shape {X_data.shape}")  # This should now show (num_samples, 128, 128, 3)
 
 # train-validation split on the data
 # val_size = 0.2
@@ -233,30 +243,30 @@ epochs = range(1, len(train_acc) + 1)
 
 
 # Create a figure and axes for the plots
-fig, ax = plt.subplots(1, 2, figsize=(18, 6))
+# fig, ax = plt.subplots(1, 2, figsize=(18, 6))
 
-# Plot training and validation accuracy
-ax[0].plot(epochs, train_acc, 'o-', color='darkgreen', label='Training Accuracy', markersize=8)
-ax[0].plot(epochs, val_acc, 's--', color='darkred', label='Validation Accuracy', markersize=8)
-ax[0].set_title('Training vs. Validation Accuracy', fontsize=16)
-ax[0].set_xlabel('Epochs', fontsize=14)
-ax[0].set_ylabel('Accuracy', fontsize=14)
-ax[0].legend()
-ax[0].grid(True)
+# # Plot training and validation accuracy
+# ax[0].plot(epochs, train_acc, 'o-', color='darkgreen', label='Training Accuracy', markersize=8)
+# ax[0].plot(epochs, val_acc, 's--', color='darkred', label='Validation Accuracy', markersize=8)
+# ax[0].set_title('Training vs. Validation Accuracy', fontsize=16)
+# ax[0].set_xlabel('Epochs', fontsize=14)
+# ax[0].set_ylabel('Accuracy', fontsize=14)
+# ax[0].legend()
+# ax[0].grid(True)
 
-# Plot training and validation loss
-ax[1].plot(epochs, train_loss, 'o-', color='darkblue', label='Training Loss', markersize=8)
-ax[1].plot(epochs, val_loss, 's--', color='orange', label='Validation Loss', markersize=8)
-ax[1].set_title('Training vs. Validation Loss', fontsize=16)
-ax[1].set_xlabel('Epochs', fontsize=14)
-ax[1].set_ylabel('Loss', fontsize=14)
-ax[1].legend()
-ax[1].grid(True)
+# # Plot training and validation loss
+# ax[1].plot(epochs, train_loss, 'o-', color='darkblue', label='Training Loss', markersize=8)
+# ax[1].plot(epochs, val_loss, 's--', color='orange', label='Validation Loss', markersize=8)
+# ax[1].set_title('Training vs. Validation Loss', fontsize=16)
+# ax[1].set_xlabel('Epochs', fontsize=14)
+# ax[1].set_ylabel('Loss', fontsize=14)
+# ax[1].legend()
+# ax[1].grid(True)
 
-# Display the plots
-plt.tight_layout()
-# plt.show(block=False)
-plt.savefig("img2")
+# # Display the plots
+# plt.tight_layout()
+# # plt.show(block=False)
+# plt.savefig("img2")
 
 evaluation = resnet_model.evaluate(X_test,y_test)
 print("=="*20)
@@ -275,59 +285,59 @@ print("Classification Report:")
 print(classification_report(y_test, predictions, target_names=['Benign', 'Malignant cancer']))
 
 
-# Function to plot confusion matrix with percentages
-def plot_confusion_matrix_with_percentages(cm, model_name):
-    plt.figure(figsize=(5, 5))
-    cm_percentage = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100  # Convert to percentages
+# # Function to plot confusion matrix with percentages
+# def plot_confusion_matrix_with_percentages(cm, model_name):
+#     plt.figure(figsize=(5, 5))
+#     cm_percentage = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100  # Convert to percentages
 
-    # Annotate with both raw numbers and percentages
-    annot = np.empty_like(cm).astype(str)
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            annot[i, j] = f"{cm[i, j]}\n({cm_percentage[i, j]:.1f}%)"
+#     # Annotate with both raw numbers and percentages
+#     annot = np.empty_like(cm).astype(str)
+#     for i in range(cm.shape[0]):
+#         for j in range(cm.shape[1]):
+#             annot[i, j] = f"{cm[i, j]}\n({cm_percentage[i, j]:.1f}%)"
 
-    sns.heatmap(cm, annot=annot, fmt="", cmap="Blues", xticklabels=["Benign", "Malignant cancer"], yticklabels=["Non-malignant", "Malignant cancer"])
-    plt.title(f"Confusion Matrix - {model_name}", fontsize=16)
-    plt.xlabel("Predicted", fontsize=14)
-    plt.ylabel("True", fontsize=14)
-    # plt.show(block=False)
-    plt.savefig("img3")
+#     sns.heatmap(cm, annot=annot, fmt="", cmap="Blues", xticklabels=["Benign", "Malignant cancer"], yticklabels=["Non-malignant", "Malignant cancer"])
+#     plt.title(f"Confusion Matrix - {model_name}", fontsize=16)
+#     plt.xlabel("Predicted", fontsize=14)
+#     plt.ylabel("True", fontsize=14)
+#     # plt.show(block=False)
+#     plt.savefig("img3")
 
 
 # Generate the confusion matrix
 cm = confusion_matrix(y_test, predictions)
 
 # Plot the confusion matrix with percentages
-plot_confusion_matrix_with_percentages(cm, "Resnet50")
+# plot_confusion_matrix_with_percentages(cm, "Resnet50")
 
 
 
 # Randomly select 8 indices from the test set
-random_indices = np.random.choice(len(X_test), 8, replace=False)
+# random_indices = np.random.choice(len(X_test), 8, replace=False)
 
-# Define the figure size
-plt.figure(figsize=(15, 5))
+# # Define the figure size
+# plt.figure(figsize=(15, 5))
 
-# Iterate through the selected indices
-for i, idx in enumerate(random_indices):
-    plt.subplot(2, 4, i + 1)
+# # Iterate through the selected indices
+# for i, idx in enumerate(random_indices):
+#     plt.subplot(2, 4, i + 1)
 
-    # Display the image
-    plt.imshow(X_test[idx].reshape(224, 224, 3), cmap='magma', interpolation='none')
+#     # Display the image
+#     plt.imshow(X_test[idx].reshape(224, 224, 3), cmap='magma', interpolation='none')
 
-    # Set the title with predicted and actual classes
-    title_color = 'red' if predictions[idx] != y_test[idx] else 'green'  # Red if incorrect, green if correct
-    plt.title(f"Predicted: {predictions[idx]}   Actual: {y_test[idx]}", fontsize=10, color=title_color)
+#     # Set the title with predicted and actual classes
+#     title_color = 'red' if predictions[idx] != y_test[idx] else 'green'  # Red if incorrect, green if correct
+#     plt.title(f"Predicted: {predictions[idx]}   Actual: {y_test[idx]}", fontsize=10, color=title_color)
 
-    # Remove x and y ticks
-    plt.axis('off')
+#     # Remove x and y ticks
+#     plt.axis('off')
 
-# Set the main title for the figure
-plt.suptitle("Sample Test Images with Predictions", size=18)
+# # Set the main title for the figure
+# plt.suptitle("Sample Test Images with Predictions", size=18)
 
-# Adjust layout to prevent overlapping
-plt.tight_layout()
+# # Adjust layout to prevent overlapping
+# plt.tight_layout()
 
-# Show the plot
-# plt.show(block=False)
-plt.savefig("img4")
+# # Show the plot
+# # plt.show(block=False)
+# plt.savefig("img4")
