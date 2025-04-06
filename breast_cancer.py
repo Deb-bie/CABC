@@ -27,7 +27,8 @@ from sklearn.metrics import confusion_matrix
 
 
 
-data_path = "./new_data/BreaKHis_Total_dataset"
+# data_path = "./new_data/BreaKHis_Total_dataset"
+data_path = "../../../data/BreaKHis_Total_dataset"
 
 # Image labels
 labels = ['benign', 'malignant']
