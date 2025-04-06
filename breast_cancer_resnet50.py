@@ -114,7 +114,27 @@ def data_preprocessing(data, data_labels):
 
     print(f" X_data shape {X_data.shape}") 
 
-    X_data = np.concatenate([X_data, X_data, X_data], axis=-1)
+
+
+    # original_X_data = ... # Your original X_data (7783, 224, 224, 1)
+    batch_size = 1000  # Adjust as needed
+    num_samples = X_data.shape[0]
+    new_X_data = []
+
+    for i in range(0, num_samples, batch_size):
+        batch = X_data[i:i + batch_size]
+        rgb_batch = np.concatenate([batch, batch, batch], axis=-1)
+        new_X_data.append(rgb_batch)
+
+    X_data = np.concatenate(X_data, axis=0)
+    print(f"New X_data shape: {X_data.shape}")
+
+
+
+
+
+
+    # X_data = np.concatenate([X_data, X_data, X_data], axis=-1)
     print(f"X_data rgb")
     print(f" X_data shape {X_data.shape}") 
 
