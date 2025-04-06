@@ -110,7 +110,7 @@ def data_preprocessing(data, data_labels):
     print(f"X_data reshape")
 
     # Convert grayscale to RGB by duplicating the single channel 3 times
-    X_data = np.repeat(X_data, 3, axis=-1)
+    # X_data = np.repeat(X_data, 3, axis=-1)
     print(f"X_data rgb")
 
     # Convert labels to numpy arrays
