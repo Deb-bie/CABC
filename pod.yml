@@ -46,8 +46,8 @@ spec:
         cpu: "16"
         nvidia.com/gpu: "1"
       requests:
-        memory: 13.3Gi
-        cpu: "13.3"
+        memory: 13Gi
+        cpu: "13"
         nvidia.com/gpu: "1"
   initContainers:
   - name: init-git-repo
