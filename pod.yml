@@ -42,12 +42,12 @@ spec:
       mountPath: /data
     resources:
       limits:
-        memory: 12Gi
-        cpu: "12"
+        memory: 19Gi
+        cpu: "19"
         nvidia.com/gpu: "1"
       requests:
-        memory: 10Gi
-        cpu: "10"
+        memory: 16Gi
+        cpu: "16"
         nvidia.com/gpu: "1"
   initContainers:
   - name: init-git-repo
