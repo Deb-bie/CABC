@@ -12,7 +12,7 @@ from tensorflow.keras.applications import ResNet50
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 32
+batch_size = 16
 epochs = 10
 
 def loading_data(data_dir):
@@ -76,58 +76,9 @@ def create_resnet_model():
     return tf.keras.Model(inputs=input_layer, outputs=output)
 
 
-def create_vit_model():
-    input_layer = layers.Input(shape=(img_size, img_size, 3))
-
-    # Patch embedding
-    patches = layers.Conv2D(64, kernel_size=16, strides=16)(input_layer)
-    flat_patches = layers.Reshape((196, 64))(patches)  # 14x14 patches
-
-    # Transformer encoder
-    x = layers.LayerNormalization()(flat_patches)
-    x = layers.MultiHeadAttention(num_heads=4, key_dim=64)(x, x)
-    x = layers.GlobalAveragePooling1D()(x)
-    x = layers.Dense(128, activation='relu')(x)
-    output = layers.Dense(1, activation='sigmoid')(x)
-
-    return tf.keras.Model(inputs=input_layer, outputs=output)
-
-
-def create_hybrid_model():
-    input_layer = layers.Input(shape=(img_size, img_size, 3))
-
-    # CNN feature extractor
-    x = layers.Conv2D(32, 3, activation='relu')(input_layer)
-    x = layers.MaxPooling2D()(x)
-    x = layers.Conv2D(64, 3, activation='relu')(x)
-    x = layers.MaxPooling2D()(x)
-
-    shape_before = tf.keras.backend.int_shape(x)
-    x = layers.Reshape((shape_before[1] * shape_before[2], shape_before[3]))(x)
-
-    # Transformer block
-    x = layers.LayerNormalization()(x)
-    x = layers.MultiHeadAttention(num_heads=2, key_dim=64)(x, x)
-    x = layers.GlobalAveragePooling1D()(x)
-    x = layers.Dense(128, activation='relu')(x)
-    output = layers.Dense(1, activation='sigmoid')(x)
-
-    return tf.keras.Model(inputs=input_layer, outputs=output)
-
-
-def get_model(model_type):
-    if model_type == 'resnet':
-        return create_vit_model()
-    elif model_type == 'hybrid':
-        return create_hybrid_model()
-    elif model_type == 'vit':
-        return create_resnet_model()
-    else:
-        raise ValueError("Invalid model type. Choose from: 'vit', 'hybrid', 'resnet'.")
-
 
 ### 4. TRAINING FUNCTION ###
-def train_model(model_type='vit'):
+def train_model():
     data, labels = loading_data(data_path)
     X, y = preprocess_data(data, labels)
 
@@ -140,12 +91,12 @@ def train_model(model_type='vit'):
         train_ds = create_dataset(X[train_idx], y[train_idx])
         val_ds = create_dataset(X[val_idx], y[val_idx])
 
-        model = get_model(model_type)
+        model = create_resnet_model()
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
         callbacks = [
             EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True),
-            ModelCheckpoint(f"{model_type}_fold{fold + 1}.h5", save_best_only=True)
+            ModelCheckpoint(f"ResNet_fold{fold + 1}.h5", save_best_only=True)
         ]
 
         model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks)
@@ -156,18 +107,12 @@ def train_model(model_type='vit'):
 
         print(f"Fold {fold + 1} - Accuracy: {acc:.4f} | Loss: {loss:.4f}")
 
-    print(f"\n Final Results for {model_type.upper()}:")
+    print(f"\n Final Results for ResNet: ")
     print(f"Mean Accuracy: {np.mean(accs):.4f}")
     print(f"Std Dev Accuracy: {np.std(accs):.4f}")
     print(f"Mean Loss: {np.mean(losses):.4f}")
     print(f"Std Dev Loss: {np.std(losses):.4f}")
 
-
-# Train ViT
-train_model('vit')
-
-# Train Hybrid CNN-Transformer
-train_model('hybrid')
 
 # Train ResNet50
 train_model('resnet')
