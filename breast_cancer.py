@@ -1,12 +1,12 @@
+### IMPORTS ###
 import os
 import cv2
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import KFold
-from tensorflow.keras import layers, models
-from tensorflow.keras.applications import ResNet50
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras import layers
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.applications import ResNet50
 
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
@@ -48,82 +48,126 @@ def preprocess_data(data, labels):
     data = np.expand_dims(data, axis=-1)  # (N, H, W, 1)
     return data, labels
 
-data, data_labels = loading_data(data_path)
-X_data, y_data = preprocess_data(data, data_labels)
 
-num_folds = 5
-kf = KFold(n_splits=num_folds, shuffle=True, random_state=42)
-all_fold_metrics = []
+### 2. DATASET GENERATOR ###
+def rgb_generator(X, y):
+    for i in range(len(X)):
+        rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
+        yield rgb.numpy(), y[i]
 
-for fold, (train_index, val_index) in enumerate(kf.split(X_data, y_data)):
-    print(f"Fold {fold + 1}/{num_folds}")
 
-    # Use TensorFlow's graph ops for efficient grayscale to RGB conversion
-    X_train, y_train = X_data[train_index], y_data[train_index]
-    X_val, y_val = X_data[val_index], y_data[val_index]
-
-    def rgb_generator(X, y):
-        for i in range(len(X)):
-            rgb_img = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
-            yield rgb_img.numpy(), y[i]
-
-    train_dataset = tf.data.Dataset.from_generator(
-        lambda: rgb_generator(X_train, y_train),
+def create_dataset(X, y):
+    return tf.data.Dataset.from_generator(
+        lambda: rgb_generator(X, y),
         output_types=(tf.float32, tf.int32),
         output_shapes=((img_size, img_size, 3), ())
     ).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-    val_dataset = tf.data.Dataset.from_generator(
-        lambda: rgb_generator(X_val, y_val),
-        output_types=(tf.float32, tf.int32),
-        output_shapes=((img_size, img_size, 3), ())
-    ).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-    base_model = ResNet50(
-        include_top=False,
-        input_shape=(img_size, img_size, 3),
-        weights='imagenet',
-        pooling='avg'
-    )
+
+### 3. MODEL DEFINITIONS ###
+def create_resnet_model():
+    input_layer = layers.Input(shape=(img_size, img_size, 3))
+    base_model = ResNet50(include_top=False, input_tensor=input_layer, weights='imagenet', pooling='avg')
     base_model.trainable = False
+    x = base_model.output
+    x = layers.Dense(128, activation='relu')(x)
+    output = layers.Dense(1, activation='sigmoid')(x)
+    return tf.keras.Model(inputs=input_layer, outputs=output)
 
-    model = models.Sequential([
-        base_model,
-        layers.Dense(512, activation='relu'),
-        layers.Dense(1, activation='sigmoid')
-    ])
 
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-        loss='binary_crossentropy',
-        metrics=['accuracy']
-    )
+def create_vit_model():
+    input_layer = layers.Input(shape=(img_size, img_size, 3))
 
-    checkpoint = ModelCheckpoint(
-        "resnet_fold_{}.h5".format(fold + 1),
-        monitor='val_accuracy',
-        save_best_only=True,
-        mode='max'
-    )
+    # Patch embedding
+    patches = layers.Conv2D(64, kernel_size=16, strides=16)(input_layer)
+    flat_patches = layers.Reshape((196, 64))(patches)  # 14x14 patches
 
-    early = EarlyStopping(
-        monitor='val_accuracy',
-        patience=10,
-        restore_best_weights=True
-    )
+    # Transformer encoder
+    x = layers.LayerNormalization()(flat_patches)
+    x = layers.MultiHeadAttention(num_heads=4, key_dim=64)(x, x)
+    x = layers.GlobalAveragePooling1D()(x)
+    x = layers.Dense(128, activation='relu')(x)
+    output = layers.Dense(1, activation='sigmoid')(x)
 
-    model.fit(
-        train_dataset,
-        validation_data=val_dataset,
-        epochs=epochs,
-        callbacks=[checkpoint, early],
-        verbose=1
-    )
+    return tf.keras.Model(inputs=input_layer, outputs=output)
 
-    loss, accuracy = model.evaluate(val_dataset, verbose=0)
-    print(f"Fold {fold + 1} Validation Accuracy: {accuracy:.4f}")
-    all_fold_metrics.append(accuracy)
 
-print("\nCross-Validation Results:")
-print(f"Mean Accuracy: {np.mean(all_fold_metrics):.4f}")
-print(f"Std Dev: {np.std(all_fold_metrics):.4f}")
+def create_hybrid_model():
+    input_layer = layers.Input(shape=(img_size, img_size, 3))
+
+    # CNN feature extractor
+    x = layers.Conv2D(32, 3, activation='relu')(input_layer)
+    x = layers.MaxPooling2D()(x)
+    x = layers.Conv2D(64, 3, activation='relu')(x)
+    x = layers.MaxPooling2D()(x)
+
+    shape_before = tf.keras.backend.int_shape(x)
+    x = layers.Reshape((shape_before[1] * shape_before[2], shape_before[3]))(x)
+
+    # Transformer block
+    x = layers.LayerNormalization()(x)
+    x = layers.MultiHeadAttention(num_heads=2, key_dim=64)(x, x)
+    x = layers.GlobalAveragePooling1D()(x)
+    x = layers.Dense(128, activation='relu')(x)
+    output = layers.Dense(1, activation='sigmoid')(x)
+
+    return tf.keras.Model(inputs=input_layer, outputs=output)
+
+
+def get_model(model_type):
+    if model_type == 'resnet':
+        return create_vit_model()
+    elif model_type == 'hybrid':
+        return create_hybrid_model()
+    elif model_type == 'vit':
+        return create_resnet_model()
+    else:
+        raise ValueError("Invalid model type. Choose from: 'vit', 'hybrid', 'resnet'.")
+
+
+### 4. TRAINING FUNCTION ###
+def train_model(model_type='vit'):
+    data, labels = loading_data(data_path)
+    X, y = preprocess_data(data, labels)
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    accs, losses = [], []
+
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X, y)):
+        print(f"\n Fold {fold + 1}/5")
+
+        train_ds = create_dataset(X[train_idx], y[train_idx])
+        val_ds = create_dataset(X[val_idx], y[val_idx])
+
+        model = get_model(model_type)
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+        callbacks = [
+            EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True),
+            ModelCheckpoint(f"{model_type}_fold{fold + 1}.h5", save_best_only=True)
+        ]
+
+        model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks)
+
+        loss, acc = model.evaluate(val_ds)
+        accs.append(acc)
+        losses.append(loss)
+
+        print(f"Fold {fold + 1} - Accuracy: {acc:.4f} | Loss: {loss:.4f}")
+
+    print(f"\n Final Results for {model_type.upper()}:")
+    print(f"Mean Accuracy: {np.mean(accs):.4f}")
+    print(f"Std Dev Accuracy: {np.std(accs):.4f}")
+    print(f"Mean Loss: {np.mean(losses):.4f}")
+    print(f"Std Dev Loss: {np.std(losses):.4f}")
+
+
+# Train ViT
+train_model('vit')
+
+# Train Hybrid CNN-Transformer
+train_model('hybrid')
+
+# Train ResNet50
+train_model('resnet')
