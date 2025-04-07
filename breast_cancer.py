@@ -115,4 +115,4 @@ def train_model():
 
 
 # Train ResNet50
-train_model('resnet')
+train_model()
