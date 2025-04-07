@@ -99,7 +99,6 @@ def train_model():
         print(f"\n Fold {fold + 1}/5")
 
         train_ds = create_dataset(X[train_idx], y[train_idx])
-        print(f"train_ds shape: {train_ds.shape} " )
         val_ds = create_dataset(X[val_idx], y[val_idx])
 
         model = create_hybrid_model()
