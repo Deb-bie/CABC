@@ -12,7 +12,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 1
+batch_size = 8
 epochs = 10
 
 def loading_data(data_dir):
