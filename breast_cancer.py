@@ -12,6 +12,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import layers
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
@@ -23,16 +24,6 @@ epochs = 10
 def loading_data(data_dir):
     data = []
     labels_list = []
-
-    datagen = tf.keras.preprocessing.image.ImageDataGenerator(
-        rotation_range=20,
-        width_shift_range=0.1,
-        height_shift_range=0.1,
-        shear_range=0.1,
-        zoom_range=0.1,
-        horizontal_flip=True,
-        fill_mode='nearest'
-    )
 
     for label in labels:
         path = os.path.join(data_dir, label)
@@ -59,6 +50,8 @@ def loading_data(data_dir):
                     labels_list.append(class_num)
                 else:
                     print(f"Warning: Unable to read image {img_path}")
+            else:
+                break
 
         # for i, img in enumerate(files):
         #     if i % 100 == 0:
@@ -91,11 +84,96 @@ def preprocess_data(data, labels):
     return X_data, y_data
 
 
-### 2. DATASET GENERATOR ###
-def rgb_generator(X, y):
-    for i in range(len(X)):
-        rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
-        yield rgb.numpy(), y[i]
+# # data augmentation
+# def data_augmentation(X_train, y_train, X_val, y_val ):
+#     augmented_train_data = ImageDataGenerator(
+#         rotation_range = 30,
+#         zoom_range = 0.2,
+#         width_shift_range=0.1,
+#         height_shift_range=0.1,
+#         horizontal_flip = True,
+#         shear_range=0.2,
+#         fill_mode='nearest'
+#     )
+
+#     augmented_val_data = ImageDataGenerator()
+#     train_gen = augmented_train_data.flow(X_train, y_train, batch_size=32)
+#     val_gen = augmented_val_data.flow(X_val, y_val, batch_size=32)
+
+
+# def data_augmentation(X_train, y_train, X_val, y_val):
+#     X_train_rgb = np.stack([tf.image.grayscale_to_rgb(tf.convert_to_tensor(img)).numpy() for img in X_train])
+#     X_val_rgb = np.stack([tf.image.grayscale_to_rgb(tf.convert_to_tensor(img)).numpy() for img in X_val])
+
+#     augmented_train_data = ImageDataGenerator(
+#         rotation_range=30,
+#         zoom_range=0.2,
+#         width_shift_range=0.1,
+#         height_shift_range=0.1,
+#         horizontal_flip=True,
+#         shear_range=0.2,
+#         fill_mode='nearest'
+#     )
+
+#     augmented_val_data = ImageDataGenerator()
+
+#     train_gen = augmented_train_data.flow(X_train_rgb, y_train, batch_size=32)
+#     val_gen = augmented_val_data.flow(X_val_rgb, y_val, batch_size=32)
+
+#     return train_gen, val_gen
+
+
+
+
+
+
+
+
+def create_dataset(X, y, augment=False):
+    def _generator():
+        for i in range(len(X)):
+            rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
+            label = y[i]
+            yield rgb, label
+
+    def _augment(image, label):
+        image = tf.image.random_flip_left_right(image)
+        image = tf.image.random_brightness(image, max_delta=0.2)
+        image = tf.image.random_contrast(image, 0.8, 1.2)
+        image = tf.image.random_rotation(image, 0.1)  # for TensorFlow >= 2.9
+        return image, label
+
+    ds = tf.data.Dataset.from_generator(
+        _generator,
+        output_signature=(
+            tf.TensorSpec(shape=(img_size, img_size, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(), dtype=tf.int32)
+        )
+    )
+
+    if augment:
+        ds = ds.map(_augment, num_parallel_calls=tf.data.AUTOTUNE)
+
+    return ds.shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ### 2. DATASET GENERATOR ###
+# def rgb_generator(X, y):
+#     for i in range(len(X)):
+#         rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
+#         yield rgb.numpy(), y[i]
 
 
 # def create_dataset(X, y):
@@ -107,14 +185,14 @@ def rgb_generator(X, y):
 # .shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
 
-def create_dataset(X, y):
-    return tf.data.Dataset.from_generator(
-        lambda: rgb_generator(X, y),
-        output_signature=(
-            tf.TensorSpec(shape=(img_size, img_size, 3), dtype=tf.float32),
-            tf.TensorSpec(shape=(), dtype=tf.int32)
-        )
-    ).shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+# def create_dataset(X, y):
+#     return tf.data.Dataset.from_generator(
+#         lambda: rgb_generator(X, y),
+#         output_signature=(
+#             tf.TensorSpec(shape=(img_size, img_size, 3), dtype=tf.float32),
+#             tf.TensorSpec(shape=(), dtype=tf.int32)
+#         )
+#     ).shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
 
 
@@ -182,9 +260,14 @@ def train_model():
         X_train, X_val = X_temp[train_idx], X_temp[val_idx]
         y_train, y_val = y_temp[train_idx], y_temp[val_idx]
 
-        train_ds = create_dataset(X_train, y_train)
-        val_ds = create_dataset(X_val, y_val)
-        test_ds = create_dataset(X_test, y_test)
+
+        # train_ds = create_dataset(X_train, y_train)
+        # val_ds = create_dataset(X_val, y_val)
+        # test_ds = create_dataset(X_test, y_test)
+
+        train_ds = create_dataset(X_train, y_train, augment=True)
+        val_ds = create_dataset(X_val, y_val, augment=False)
+        test_ds = create_dataset(X_test, y_test, augment=False)
 
         model = create_resnet_model()
         
