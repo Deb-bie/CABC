@@ -158,6 +158,7 @@ def train_model():
     accs, losses = [], []
 
     for fold, (train_idx, val_idx) in enumerate(kf.split(X_temp, y_temp)):
+        print(f"Train index: {train_idx}")
         print(f"\n Fold {fold + 1}/5")
 
         X_train, X_val = X_temp[train_idx], X_temp[val_idx]
@@ -204,15 +205,15 @@ def train_model():
         accs.append(acc)
         losses.append(loss)
 
-        # Ensure X_test is 3-channel for prediction
-        if X_test.shape[-1] == 1:
-            print("test-rgb")
-            X_test_rgb = np.concatenate([X_test]*3, axis=-1)
-        else:
-            X_test_rgb = X_test
+        # # Ensure X_test is 3-channel for prediction
+        # if X_test.shape[-1] == 1:
+        #     print("test-rgb")
+        #     X_test_rgb = np.concatenate([X_test]*3, axis=-1)
+        # else:
+        #     X_test_rgb = X_test
 
-        y_pred = model.predict(X_test_rgb)
-        y_pred_bin = (y_pred > 0.5).astype(int)
+        # y_pred = model.predict(X_test_rgb)
+        # y_pred_bin = (y_pred > 0.5).astype(int)
 
         # print(classification_report(y_test, y_pred_bin, target_names=labels))
         # cm = confusion_matrix(y_test, y_pred_bin)
