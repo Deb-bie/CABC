@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
 import datetime
+from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import layers
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.applications import ResNet50
@@ -22,6 +23,17 @@ epochs = 10
 def loading_data(data_dir):
     data = []
     labels_list = []
+
+    datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+        rotation_range=20,
+        width_shift_range=0.1,
+        height_shift_range=0.1,
+        shear_range=0.1,
+        zoom_range=0.1,
+        horizontal_flip=True,
+        fill_mode='nearest'
+    )
+
     for label in labels:
         path = os.path.join(data_dir, label)
         class_num = labels.index(label)
@@ -156,7 +168,13 @@ def train_model():
         test_ds = create_dataset(X_test, y_test)
 
         model = create_resnet_model()
-        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        
+        model.compile(
+            optimizer='adam', 
+            loss='binary_crossentropy', 
+            metrics=['accuracy']
+        )
+        
         log_dir = f"logs/Resnet_fold{fold+1}_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
         callbacks = [
@@ -186,7 +204,14 @@ def train_model():
         accs.append(acc)
         losses.append(loss)
 
-        y_pred = model.predict(X_test)
+        # Ensure X_test is 3-channel for prediction
+        if X_test.shape[-1] == 1:
+            print("test-rgb")
+            X_test_rgb = np.concatenate([X_test]*3, axis=-1)
+        else:
+            X_test_rgb = X_test
+
+        y_pred = model.predict(X_test_rgb)
         y_pred_bin = (y_pred > 0.5).astype(int)
 
         print(classification_report(y_test, y_pred_bin, target_names=labels))
