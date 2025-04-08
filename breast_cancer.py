@@ -146,13 +146,13 @@ def create_resnet_model():
 
 
 
-def plot_history(history, fold):
-    plt.plot(history.history['accuracy'], label='train acc')
-    plt.plot(history.history['val_accuracy'], label='val acc')
-    plt.title(f'Resnet Accuracy Fold {fold + 1}')
-    plt.legend()
-    plt.savefig(f'Resnet_accuracy_fold{fold+1}.png')
-    plt.clf()
+# def plot_history(history, fold):
+#     plt.plot(history.history['accuracy'], label='train acc')
+#     plt.plot(history.history['val_accuracy'], label='val acc')
+#     plt.title(f'Resnet Accuracy Fold {fold + 1}')
+#     plt.legend()
+#     plt.savefig(f'Resnet_accuracy_fold{fold+1}.png')
+#     plt.clf()
 
 
 
@@ -196,28 +196,28 @@ def train_model():
         
         log_dir = f"logs/Resnet_fold{fold+1}_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
-        callbacks = [
-            EarlyStopping(
-                monitor='val_accuracy', 
-                patience=5, 
-                restore_best_weights=True
-            ),
+        # callbacks = [
+        #     EarlyStopping(
+        #         monitor='val_accuracy', 
+        #         patience=5, 
+        #         restore_best_weights=True
+        #     ),
             
-            ModelCheckpoint(
-                f"ResNet_fold{fold + 1}.h5", 
-                save_best_only=True
-            ),
-            tf.keras.callbacks.TensorBoard(log_dir=log_dir)
-        ]
+        #     ModelCheckpoint(
+        #         f"ResNet_fold{fold + 1}.h5", 
+        #         save_best_only=True
+        #     ),
+        #     tf.keras.callbacks.TensorBoard(log_dir=log_dir)
+        # ]
 
         history = model.fit(
             train_ds, 
             validation_data=val_ds, 
             epochs=epochs, 
-            callbacks=callbacks
+            # callbacks=callbacks
         )
 
-        plot_history(history, fold)
+        # plot_history(history, fold)
 
         loss, acc = model.evaluate(test_ds)
         accs.append(acc)
