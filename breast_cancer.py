@@ -2,8 +2,12 @@
 import os
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 import tensorflow as tf
-from sklearn.model_selection import KFold
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.metrics import confusion_matrix, classification_report
+import seaborn as sns
+import datetime
 from tensorflow.keras import layers
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.applications import ResNet50
@@ -44,9 +48,17 @@ def loading_data(data_dir):
 
 def preprocess_data(data, labels):
     # Normalize and reshape
-    data = data.astype('float32') / 255.0
-    data = np.expand_dims(data, axis=-1)  # (N, H, W, 1)
-    return data, labels
+    # data = data.astype('float32') / 255.0
+    # data = np.expand_dims(data, axis=-1)  # (N, H, W, 1)
+    # return data, labels
+
+    X_data = np.array(data) / 255
+    X_data = X_data.reshape(-1, img_size, img_size, 1)
+    print(X_data.shape)
+
+    y_data = np.array(labels)
+
+    return X_data, y_data
 
 
 ### 2. DATASET GENERATOR ###
@@ -56,24 +68,61 @@ def rgb_generator(X, y):
         yield rgb.numpy(), y[i]
 
 
+# def create_dataset(X, y):
+#     return tf.data.Dataset.from_generator(
+#         lambda: rgb_generator(X, y),
+#         output_types=(tf.float32, tf.int32),
+#         output_shapes=((img_size, img_size, 3), ())
+#     ).from_tensor_slices((X, y))
+# .shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+
 def create_dataset(X, y):
     return tf.data.Dataset.from_generator(
         lambda: rgb_generator(X, y),
-        output_types=(tf.float32, tf.int32),
-        output_shapes=((img_size, img_size, 3), ())
-    ).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        output_signature=(
+            tf.TensorSpec(shape=(img_size, img_size, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(), dtype=tf.int32)
+        )
+    ).shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
 
 
 ### 3. MODEL DEFINITIONS ###
 def create_resnet_model():
-    input_layer = layers.Input(shape=(img_size, img_size, 3))
-    base_model = ResNet50(include_top=False, input_tensor=input_layer, weights='imagenet', pooling='avg')
-    base_model.trainable = False
+    # input_layer = layers.Input(shape=(img_size, img_size, 3))
+    # base_model = ResNet50(include_top=False, input_tensor=input_layer, weights='imagenet', pooling='avg')
+    # base_model.trainable = False
+    # x = base_model.output
+    # x = layers.Dense(128, activation='relu')(x)
+    # output = layers.Dense(1, activation='sigmoid')(x)
+    # return tf.keras.Model(inputs=input_layer, outputs=output)
+
+
+    base_model = ResNet50(
+        include_top=False, 
+        weights='imagenet', 
+        input_shape=(img_size, img_size, 3), 
+        pooling='avg'
+    )
+    for layer in base_model.layers[:-30]:
+        layer.trainable = False
+    inputs = base_model.input
     x = base_model.output
-    x = layers.Dense(128, activation='relu')(x)
-    output = layers.Dense(1, activation='sigmoid')(x)
-    return tf.keras.Model(inputs=input_layer, outputs=output)
+    x = layers.Dense(512, activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    outputs = layers.Dense(1, activation='sigmoid')(x)
+    return tf.keras.Model(inputs, outputs)
+
+
+
+def plot_history(history, fold):
+    plt.plot(history.history['accuracy'], label='train acc')
+    plt.plot(history.history['val_accuracy'], label='val acc')
+    plt.title(f'Resnet Accuracy Fold {fold + 1}')
+    plt.legend()
+    plt.savefig(f'Resnet_accuracy_fold{fold+1}.png')
+    plt.clf()
 
 
 
@@ -82,28 +131,73 @@ def train_model():
     data, labels = loading_data(data_path)
     X, y = preprocess_data(data, labels)
 
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    X_temp, X_test, y_temp, y_test = train_test_split(
+        X, 
+        y, 
+        test_size=0.1, 
+        random_state=42
+    )
+
+    kf = KFold(
+        n_splits=5, 
+        shuffle=True, 
+        random_state=42
+    )
     accs, losses = [], []
 
-    for fold, (train_idx, val_idx) in enumerate(kf.split(X, y)):
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X_temp, y_temp)):
         print(f"\n Fold {fold + 1}/5")
 
-        train_ds = create_dataset(X[train_idx], y[train_idx])
-        val_ds = create_dataset(X[val_idx], y[val_idx])
+        X_train, X_val = X_temp[train_idx], X_temp[val_idx]
+        y_train, y_val = y_temp[train_idx], y_temp[val_idx]
+
+        train_ds = create_dataset(X_train, y_train)
+        val_ds = create_dataset(X_val, y_val)
+        test_ds = create_dataset(X_test, y_test)
 
         model = create_resnet_model()
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        log_dir = f"logs/Resnet_fold{fold+1}_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
         callbacks = [
-            EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True),
-            ModelCheckpoint(f"ResNet_fold{fold + 1}.h5", save_best_only=True)
+            EarlyStopping(
+                monitor='val_accuracy', 
+                patience=5, 
+                restore_best_weights=True
+            ),
+            
+            ModelCheckpoint(
+                f"ResNet_fold{fold + 1}.h5", 
+                save_best_only=True
+            ),
+            tf.keras.callbacks.TensorBoard(log_dir=log_dir)
         ]
 
-        model.fit(train_ds, validation_data=val_ds, epochs=epochs, callbacks=callbacks)
+        history = model.fit(
+            train_ds, 
+            validation_data=val_ds, 
+            epochs=epochs, 
+            callbacks=callbacks
+        )
 
-        loss, acc = model.evaluate(val_ds)
+        plot_history(history, fold)
+
+        loss, acc = model.evaluate(test_ds)
         accs.append(acc)
         losses.append(loss)
+
+        y_pred = model.predict(X_test)
+        y_pred_bin = (y_pred > 0.5).astype(int)
+
+        print(classification_report(y_test, y_pred_bin, target_names=labels))
+        cm = confusion_matrix(y_test, y_pred_bin)
+        sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels, cmap='Blues')
+        plt.title(f'Resnet Confusion Matrix - Fold {fold + 1}')
+        plt.xlabel('Predicted')
+        plt.ylabel('Actual')
+        plt.tight_layout()
+        plt.savefig(f'resnet_fold{fold+1}_conf_matrix.png')
+        plt.clf()
 
         print(f"Fold {fold + 1} - Accuracy: {acc:.4f} | Loss: {loss:.4f}")
 
