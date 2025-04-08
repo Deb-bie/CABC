@@ -214,23 +214,29 @@ def train_model():
         y_pred = model.predict(X_test_rgb)
         y_pred_bin = (y_pred > 0.5).astype(int)
 
-        print(classification_report(y_test, y_pred_bin, target_names=labels))
-        cm = confusion_matrix(y_test, y_pred_bin)
-        sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels, cmap='Blues')
-        plt.title(f'Resnet Confusion Matrix - Fold {fold + 1}')
-        plt.xlabel('Predicted')
-        plt.ylabel('Actual')
-        plt.tight_layout()
-        plt.savefig(f'resnet_fold{fold+1}_conf_matrix.png')
-        plt.clf()
+        # print(classification_report(y_test, y_pred_bin, target_names=labels))
+        # cm = confusion_matrix(y_test, y_pred_bin)
+        # sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels, cmap='Blues')
+        # plt.title(f'Resnet Confusion Matrix - Fold {fold + 1}')
+        # plt.xlabel('Predicted')
+        # plt.ylabel('Actual')
+        # plt.tight_layout()
+        # plt.savefig(f'resnet_fold{fold+1}_conf_matrix.png')
+        # plt.clf()
 
-        print(f"Fold {fold + 1} - Accuracy: {acc:.4f} | Loss: {loss:.4f}")
+        # print(f"Fold {fold + 1} - Accuracy: {acc:.4f} | Loss: {loss:.4f}")
 
     print(f"\n Final Results for ResNet: ")
     print(f"Mean Accuracy: {np.mean(accs):.4f}")
     print(f"Std Dev Accuracy: {np.std(accs):.4f}")
     print(f"Mean Loss: {np.mean(losses):.4f}")
     print(f"Std Dev Loss: {np.std(losses):.4f}")
+
+
+    # Evaluate final model on test set
+    final_loss, final_acc = model.evaluate(test_ds)
+    print(f"\nTest Accuracy: {final_acc:.4f}")
+    print(f"Test Loss: {final_loss:.4f}")
 
 
 # Train ResNet50
