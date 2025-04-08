@@ -42,19 +42,37 @@ def loading_data(data_dir):
 
         print(f"Loading {label} images ({total_files} files)")
 
+        # load only 2000 images
+
         for i, img in enumerate(files):
             if i % 100 == 0:
                 print(f" Progress: {i}/{total_files}")
+            
+            if i <= 2000:
 
-            img_path = os.path.join(path, img)
-            img_arr = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                img_path = os.path.join(path, img)
+                img_arr = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
 
-            if img_arr is not None:
-                resized_arr = cv2.resize(img_arr, (img_size, img_size))
-                data.append(resized_arr)
-                labels_list.append(class_num)
-            else:
-                print(f"Warning: Unable to read image {img_path}")
+                if img_arr is not None:
+                    resized_arr = cv2.resize(img_arr, (img_size, img_size))
+                    data.append(resized_arr)
+                    labels_list.append(class_num)
+                else:
+                    print(f"Warning: Unable to read image {img_path}")
+
+        # for i, img in enumerate(files):
+        #     if i % 100 == 0:
+        #         print(f" Progress: {i}/{total_files}")
+
+        #     img_path = os.path.join(path, img)
+        #     img_arr = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+
+        #     if img_arr is not None:
+        #         resized_arr = cv2.resize(img_arr, (img_size, img_size))
+        #         data.append(resized_arr)
+        #         labels_list.append(class_num)
+        #     else:
+        #         print(f"Warning: Unable to read image {img_path}")
 
     return np.array(data), np.array(labels_list)
 
