@@ -13,6 +13,9 @@ from tensorflow.keras import layers
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.applications import ResNet50
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import tensorflow_addons as tfa
+import math
+
 
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
@@ -140,7 +143,9 @@ def create_dataset(X, y, augment=False):
         image = tf.image.random_flip_left_right(image)
         image = tf.image.random_brightness(image, max_delta=0.2)
         image = tf.image.random_contrast(image, 0.8, 1.2)
-        image = tf.image.random_rotation(image, 0.1)  # for TensorFlow >= 2.9
+        
+        # Rotate by exactly 0.1 radians (≈5.73 degrees)
+        image = tfa.image.rotate(image, angles=0.1, fill_mode='nearest')
         return image, label
 
     ds = tf.data.Dataset.from_generator(
