@@ -18,7 +18,7 @@ import tensorflow_addons as tfa # type: ignore
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 24
+batch_size = 32
   # Increased from 16 to 32
 epochs = 30      # Increased from 10 to 30
 
