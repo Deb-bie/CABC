@@ -1,5 +1,6 @@
 import os
-import cv2
+import cv2 # type: ignore
+import io
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -7,11 +8,11 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
 import seaborn as sns
 import datetime
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import layers
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.applications import ResNet50
-import tensorflow_addons as tfa
+from tensorflow.keras.optimizers import Adam # type: ignore
+from tensorflow.keras import layers # type: ignore
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau # type: ignore
+from tensorflow.keras.applications import ResNet50 # type: ignore
+import tensorflow_addons as tfa # type: ignore
 
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
@@ -167,7 +168,12 @@ def plot_training_history(history, fold):
     plt.close()
     
 
-def evaluate_model(model, test_ds, y_test):
+def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
+
+    # Create image writer for this evaluation
+    tb_image_writer = log_images_to_tensorboard(log_dir)
+
+
     # Get predictions
     y_pred_prob = model.predict(test_ds)
     
@@ -188,13 +194,14 @@ def evaluate_model(model, test_ds, y_test):
     # Confusion matrix
     cm = confusion_matrix(y_test, y_pred)
     plt.figure(figsize=(8, 6))
+    fig = plt.figure(figsize=(8, 6))
     sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels, cmap='Blues')
     plt.title('Confusion Matrix')
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
     plt.tight_layout()
     plt.savefig('final_confusion_matrix.png')
-    plt.show()
+    # plt.show()
 
     log_image(tb_image_writer, 'confusion_matrix', fig, step=epoch)
     
@@ -203,6 +210,7 @@ def evaluate_model(model, test_ds, y_test):
     roc_auc = auc(fpr, tpr)
     
     plt.figure(figsize=(8, 6))
+    fig = plt.figure(figsize=(8, 6))
     plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
     plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
     plt.xlim([0.0, 1.0])
@@ -212,7 +220,9 @@ def evaluate_model(model, test_ds, y_test):
     plt.title('Receiver Operating Characteristic')
     plt.legend(loc="lower right")
     plt.savefig('roc_curve.png')
-    plt.show()
+
+    log_image(tb_image_writer, 'roc_curve', fig, step=epoch)
+    # plt.show()
     
     return y_pred, y_pred_prob_flat
 
@@ -244,9 +254,6 @@ def log_image(file_writer, name, figure, step=0):
 
 
 def train_model():
-
-    # logging
-    tb_image_writer = log_images_to_tensorboard(log_dir)
 
     # Load and preprocess data
     print("Loading data...")
@@ -351,6 +358,9 @@ def train_model():
             ),
             tf.keras.callbacks.TensorBoard(log_dir=log_dir)
         ]
+
+        # logging
+        tb_image_writer = log_images_to_tensorboard(log_dir)
         
         # Train model
         print("Training model...")
@@ -409,7 +419,8 @@ def train_model():
     print(f"Test Recall: {test_recall:.4f}")
     
     # Detailed evaluation with confusion matrix and ROC curve
-    y_pred, y_pred_prob = evaluate_model(best_model, test_ds, y_test)
+    final_log_dir = "logs/final_evaluation_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    y_pred, y_pred_prob = evaluate_model(best_model, test_ds, y_test, final_log_dir)
     
     # Save best model
     best_model.save('best_histopathology_model.h5')
