@@ -17,7 +17,7 @@ import tensorflow_addons as tfa
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 16  # Increased from 16 to 32
+batch_size = 24  # Increased from 16 to 32
 epochs = 30      # Increased from 10 to 30
 
 def loading_data(data_dir):
@@ -120,7 +120,7 @@ def create_resnet_model():
     )
     
     # Freeze fewer layers to allow more fine-tuning
-    for layer in base_model.layers[:-50]:  # Unfreeze more layers (50 instead of 30)
+    for layer in base_model.layers[:-10]:  # Unfreeze more layers (50 instead of 30)
         layer.trainable = False
         
     inputs = base_model.input
@@ -267,7 +267,7 @@ def train_model():
         model = create_resnet_model()
         
         # Learning rate schedule
-        initial_learning_rate = 1e-4
+        initial_learning_rate = 1e-5
         lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
             initial_learning_rate,
             decay_steps=1000,
