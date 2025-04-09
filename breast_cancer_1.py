@@ -17,7 +17,8 @@ import tensorflow_addons as tfa
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 24  # Increased from 16 to 32
+batch_size = 24
+  # Increased from 16 to 32
 epochs = 30      # Increased from 10 to 30
 
 def loading_data(data_dir):
@@ -164,6 +165,7 @@ def plot_training_history(history, fold):
     plt.tight_layout()
     plt.savefig(f'history_fold{fold+1}.png')
     plt.close()
+    
 
 def evaluate_model(model, test_ds, y_test):
     # Get predictions
@@ -193,6 +195,8 @@ def evaluate_model(model, test_ds, y_test):
     plt.tight_layout()
     plt.savefig('final_confusion_matrix.png')
     plt.show()
+
+    log_image(tb_image_writer, 'confusion_matrix', fig, step=epoch)
     
     # ROC curve
     fpr, tpr, _ = roc_curve(y_test, y_pred_prob_flat)
@@ -212,7 +216,38 @@ def evaluate_model(model, test_ds, y_test):
     
     return y_pred, y_pred_prob_flat
 
+
+
+def log_images_to_tensorboard(log_dir):
+    """Create a TensorBoard image logger"""
+    file_writer = tf.summary.create_file_writer(log_dir + '/images')
+    return file_writer
+
+
+
+def log_image(file_writer, name, figure, step=0):
+    """Log a matplotlib figure to TensorBoard"""
+    with file_writer.as_default():
+        # Convert figure to PNG image
+        buffer = io.BytesIO()
+        figure.savefig(buffer, format='png')
+        buffer.seek(0)
+        
+        # Convert PNG buffer to TF image
+        image = tf.image.decode_png(buffer.getvalue(), channels=4)
+        
+        # Add batch dimension and log
+        image = tf.expand_dims(image, 0)
+        tf.summary.image(name, image, step=step)
+        
+    plt.close(figure)
+
+
 def train_model():
+
+    # logging
+    tb_image_writer = log_images_to_tensorboard(log_dir)
+
     # Load and preprocess data
     print("Loading data...")
     data, labels_data = loading_data(data_path)
@@ -379,6 +414,7 @@ def train_model():
     # Save best model
     best_model.save('best_histopathology_model.h5')
     print("Best model saved as 'best_histopathology_model.h5'")
+
 
 if __name__ == "__main__":
     # Set memory growth for GPU
