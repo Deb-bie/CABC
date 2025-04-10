@@ -37,6 +37,10 @@ def loading_data(data_dir):
         for i, img in enumerate(files):
             if i % 100 == 0:
                 print(f" Progress: {i}/{total_files}")
+
+            if label == "malignant" and i > 3000:
+                break
+            
             
             # Removed the 2000 image limit to use all available data
             img_path = os.path.join(path, img)
