@@ -49,7 +49,7 @@ def loading_data(data_dir):
     return np.array(data), np.array(labels_list)
 
 def preprocess_data(data, labels):   
-    X_data = np.array(data).astype('float32')
+    X_data = np.array(zaq   data).astype('float32')
     # Global standardization
     X_data = (X_data - X_data.mean()) / (X_data.std() + 1e-7)
     X_data = X_data.reshape(-1, img_size, img_size, 1)
@@ -242,7 +242,7 @@ def train_with_progressive_strategy(model, train_ds, val_ds, epochs=30, callback
     
     # Unfreeze the top layers of the base model
     base_model = model.layers[0]  # Assuming base model is the first layer
-    for layer in base_model.layers[-30:]:  # Unfreeze last 30 layers
+    for layer in model.layers[-30:]:  # Unfreeze last 30 layers
         layer.trainable = True
     
     # Lower learning rate for fine-tuning

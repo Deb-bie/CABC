@@ -257,7 +257,7 @@ def train_with_progressive_strategy(model, train_ds, val_ds, epochs=30, callback
     
     # Unfreeze the top layers of the base model
     base_model = model.layers[0]  # Assuming base model is the first layer
-    for layer in base_model.layers[-30:]:  # Unfreeze last 30 layers
+    for layer in model.layers[-30:]:  # Unfreeze last 30 layers
         layer.trainable = True
     
     # Lower learning rate for fine-tuning
