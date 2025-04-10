@@ -49,7 +49,7 @@ def loading_data(data_dir):
     return np.array(data), np.array(labels_list)
 
 def preprocess_data(data, labels):   
-    X_data = np.array(X_data).astype('float32')
+    X_data = np.array(data).astype('float32')
     # Global standardization
     X_data = (X_data - X_data.mean()) / (X_data.std() + 1e-7)
     X_data = X_data.reshape(-1, img_size, img_size, 1)
