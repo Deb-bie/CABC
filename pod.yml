@@ -74,5 +74,5 @@ spec:
     emptyDir: {}
   - name: cabc-data-volume
     persistentVolumeClaim:
-      claimName: cabc-data
+      claimName: cabc-data-new
   restartPolicy: Never
