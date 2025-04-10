@@ -514,7 +514,7 @@ def train_model():
         )
         
         # Plot training history
-        plot_training_history(history, fold)
+        # plot_training_history(history, fold)
         
         # Evaluate on validation set
         val_loss, val_acc, val_auc, val_precision, val_recall = model.evaluate(val_ds)
