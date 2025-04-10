@@ -41,8 +41,6 @@ def loading_data(data_dir):
             if label == "malignant" and i > 3000:
                 break
             
-            
-            # Removed the 2000 image limit to use all available data
             img_path = os.path.join(path, img)
             img_arr = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
 
