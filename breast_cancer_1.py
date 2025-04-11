@@ -65,7 +65,7 @@ def check_class_balance(y):
     print(f"Class distribution: {dict(zip([labels[i] for i in unique], counts))}")
     return counts
 
-def focal_loss(gamma=2.0, alpha=2.0):
+def focal_loss(gamma=2.0, alpha=0.75):
     """
     Focal Loss for addressing class imbalance.
     alpha: weighs the importance of positive class (set higher for the minority class)
@@ -89,35 +89,80 @@ def focal_loss(gamma=2.0, alpha=2.0):
     
     return loss
 
+
+def _strong_augment(image):
+    # Strong augmentation for underrepresented class
+    
+    # Random flips
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_flip_up_down(image)
+    
+    # Multiple random rotations (more varied angles)
+    angle = tf.random.uniform([], -0.4, 0.4)  # About ±23 degrees
+    image = tfa.image.rotate(image, angles=angle, fill_mode='reflect')
+    
+    # Random zoom and crop
+    zoom_factor = tf.random.uniform([], 0.7, 1.3)
+    image_shape = tf.shape(image)
+    crop_size = tf.cast(tf.cast(image_shape[:-1], tf.float32) * zoom_factor, tf.int32)
+    if crop_size[0] > 0 and crop_size[1] > 0 and crop_size[0] <= image_shape[0] and crop_size[1] <= image_shape[1]:
+        image = tf.image.random_crop(image, [crop_size[0], crop_size[1], 3])
+        image = tf.image.resize(image, [img_size, img_size])
+    
+    # Color transformations
+    image = tf.image.random_brightness(image, max_delta=0.5)
+    image = tf.image.random_contrast(image, 0.5, 1.5)
+    image = tf.image.random_saturation(image, 0.6, 1.4)
+    
+    # Add random noise
+    noise = tf.random.normal(shape=tf.shape(image), mean=0.0, stddev=0.08)
+    image = tf.clip_by_value(image + noise, 0.0, 1.0)
+    
+    # Random translation
+    translation = tf.random.uniform([2], -0.2, 0.2, dtype=tf.float32)
+    image = tfa.image.translate(image, translation * img_size, fill_mode='reflect')
+    
+    return image
+
+
 def create_dataset(X, y, augment=False):
+    # Separate samples by class
+    benign_indices = np.where(y == 0)[0]
+    malignant_indices = np.where(y == 1)[0]
+    
+    # Calculate how many extra benign samples we need through augmentation
+    augmentation_factor = len(malignant_indices) // len(benign_indices)
+    
     def _generator():
+        # Include all original samples
         for i in range(len(X)):
             rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
             label = y[i]
             yield rgb, label
-
+            
+        # Extra augmentation for benign class if needed
+        if augment:
+            for _ in range(augmentation_factor - 1):  # -1 because we already included original samples
+                for i in benign_indices:
+                    rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
+                    # Apply strong augmentation to create diverse samples
+                    rgb = _strong_augment(rgb)
+                    yield rgb, 0  # benign class
+    
     def _augment(image, label):
-        # Enhanced augmentation pipeline
-        # Random flips
-        image = tf.image.random_flip_left_right(image)
-        image = tf.image.random_flip_up_down(image)
-        
-        # Color augmentations
-        image = tf.image.random_brightness(image, max_delta=0.3)
-        image = tf.image.random_contrast(image, 0.7, 1.3)
-        image = tf.image.random_saturation(image, 0.8, 1.2)
-        
-        # Random rotation with various angles
-        angle = tf.random.uniform([], -0.2, 0.2)  # Random rotation between -11.5 and 11.5 degrees
+        # Standard augmentation for all samples
+        if tf.random.uniform([], 0, 1) > 0.5:
+            image = tf.image.random_flip_left_right(image)
+        if tf.random.uniform([], 0, 1) > 0.5:
+            image = tf.image.random_flip_up_down(image)
+            
+        # Random rotation
+        angle = tf.random.uniform([], -0.2, 0.2)
         image = tfa.image.rotate(image, angles=angle, fill_mode='reflect')
         
-        # Random zoom
-        zoom_factor = tf.random.uniform([], 0.8, 1.2)
-        image_shape = tf.shape(image)
-        crop_size = tf.cast(tf.cast(image_shape[:-1], tf.float32) * zoom_factor, tf.int32)
-        if crop_size[0] > 0 and crop_size[1] > 0 and crop_size[0] <= image_shape[0] and crop_size[1] <= image_shape[1]:
-            image = tf.image.random_crop(image, [crop_size[0], crop_size[1], 3])
-            image = tf.image.resize(image, [img_size, img_size])
+        # Color jitter
+        image = tf.image.random_brightness(image, max_delta=0.2)
+        image = tf.image.random_contrast(image, 0.8, 1.2)
         
         return image, label
 
