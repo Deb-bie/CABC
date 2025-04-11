@@ -18,9 +18,8 @@ import tensorflow_addons as tfa # type: ignore
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 32
-  # Increased from 16 to 32
-epochs = 30      # Increased from 10 to 30
+batch_size = 48
+epochs = 30
 
 def loading_data(data_dir):
     data = []
@@ -190,7 +189,6 @@ def plot_training_history(history, fold):
     plt.savefig(f'history_fold{fold+1}.png')
     plt.close()
     
-
 def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
 
     # Create image writer for this evaluation
@@ -249,14 +247,10 @@ def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
     
     return y_pred, y_pred_prob_flat
 
-
-
 def log_images_to_tensorboard(log_dir):
     """Create a TensorBoard image logger"""
     file_writer = tf.summary.create_file_writer(log_dir + '/images')
     return file_writer
-
-
 
 def log_image(file_writer, name, figure, step=0):
     """Log a matplotlib figure to TensorBoard"""
@@ -274,7 +268,6 @@ def log_image(file_writer, name, figure, step=0):
         tf.summary.image(name, image, step=step)
         
     plt.close(figure)
-
 
 def train_model():
 
@@ -449,7 +442,6 @@ def train_model():
     # Save best model
     best_model.save('best_histopathology_model.h5')
     print("Best model saved as 'best_histopathology_model.h5'")
-
 
 if __name__ == "__main__":
     # Set memory growth for GPU
