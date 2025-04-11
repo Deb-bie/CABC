@@ -66,6 +66,30 @@ def check_class_balance(y):
     print(f"Class distribution: {dict(zip([labels[i] for i in unique], counts))}")
     return counts
 
+def focal_loss(gamma=2.0, alpha=0.75):
+    """
+    Focal Loss for addressing class imbalance.
+    alpha: weighs the importance of positive class (set higher for the minority class)
+    gamma: focuses more on hard examples
+    """
+    def focal_loss_with_logits(logits, targets, alpha, gamma, y_pred):
+        targets = tf.cast(targets, dtype=tf.float32)
+        
+        # Standard binary cross entropy calculation
+        BCE = tf.keras.losses.binary_crossentropy(targets, y_pred)
+        
+        # Focal loss weights
+        alpha_t = targets * alpha + (1 - targets) * (1 - alpha)
+        p_t = targets * y_pred + (1 - targets) * (1 - y_pred)
+        FL = alpha_t * tf.pow(1 - p_t, gamma) * BCE
+        
+        return tf.reduce_mean(FL)
+    
+    def loss(y_true, y_pred):
+        return focal_loss_with_logits(y_pred, y_true, alpha, gamma, y_pred)
+    
+    return loss
+
 def create_dataset(X, y, augment=False):
     def _generator():
         for i in range(len(X)):
@@ -321,7 +345,8 @@ def train_model():
         # Compile model with additional metrics
         model.compile(
             optimizer=optimizer, 
-            loss='binary_crossentropy', 
+            loss=focal_loss(gamma=2.0, alpha=0.75),  # Focus more on benign class
+            # loss='binary_crossentropy', 
             metrics=[
                 'accuracy', 
                 tf.keras.metrics.AUC(name='auc'),
