@@ -238,37 +238,41 @@ def train_with_progressive_strategy(model, train_ds, val_ds, epochs=30, callback
     )
     
     # Stage 2: Fine-tune upper layers of the base model
-    print("Stage 2: Fine-tuning upper layers...")
+    # print("Stage 2: Fine-tuning upper layers...")
     
-    # Unfreeze the top layers of the base model
-    base_model = model.layers[0]  # Assuming base model is the first layer
-    for layer in model.layers[-30:]:  # Unfreeze last 30 layers
-        layer.trainable = True
+    # # Unfreeze the top layers of the base model
+    # base_model = model.layers[0]  # Assuming base model is the first layer
+    # for layer in model.layers[-30:]:  # Unfreeze last 30 layers
+    #     layer.trainable = True
     
-    # Lower learning rate for fine-tuning
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(1e-5),
-        loss=focal_loss(gamma=2.0, alpha=0.75),
-        metrics=[
-            'accuracy',
-            tf.keras.metrics.AUC(name='auc'),
-            tf.keras.metrics.Precision(name='precision'),
-            tf.keras.metrics.Recall(name='recall')
-        ]
-    )
+    # # Lower learning rate for fine-tuning
+    # model.compile(
+    #     optimizer=tf.keras.optimizers.Adam(1e-5),
+    #     loss=focal_loss(gamma=2.0, alpha=0.75),
+    #     metrics=[
+    #         'accuracy',
+    #         tf.keras.metrics.AUC(name='auc'),
+    #         tf.keras.metrics.Precision(name='precision'),
+    #         tf.keras.metrics.Recall(name='recall')
+    #     ]
+    # )
     
-    history2 = model.fit(
-        train_ds,
-        validation_data=val_ds,
-        epochs=epochs - 10,
-        callbacks=callbacks
-    )
+    # history2 = model.fit(
+    #     train_ds,
+    #     validation_data=val_ds,
+    #     epochs=epochs - 10,
+    #     callbacks=callbacks
+    # )
     
     # Combine histories
     full_history = {}
+    # for k in history1.history:
+    #     if k in history2.history:
+    #         full_history[k] = history1.history[k] + history2.history[k]
+
     for k in history1.history:
-        if k in history2.history:
-            full_history[k] = history1.history[k] + history2.history[k]
+        # if k in history2.history:
+        full_history[k] = history1.history[k]
 
     
     return model, full_history
