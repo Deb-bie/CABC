@@ -1,36 +1,25 @@
-
-### IMPORTS ###
-
 import os
-import cv2
-import numpy as np 
+import cv2 # type: ignore
+import io
+import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from sklearn.model_selection import train_test_split
-from tensorflow.keras import layers
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.layers import Dropout
-from tensorflow.keras.layers import Conv2D
-from tensorflow.keras.layers import MaxPooling2D, MaxPool2D
-from tensorflow.keras.layers import Flatten
-from sklearn.metrics import accuracy_score
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.regularizers import l2
-from tensorflow.keras.layers import BatchNormalization
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from sklearn.metrics import classification_report 
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
 import seaborn as sns
-from sklearn.metrics import confusion_matrix
+import datetime
+from tensorflow.keras.optimizers import Adam # type: ignore
+from tensorflow.keras import layers # type: ignore
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau # type: ignore
+from tensorflow.keras.applications import ResNet50 # type: ignore
+import tensorflow_addons as tfa # type: ignore
 
-
-# data_path = "../../../data/BreaKHis_Total_dataset"
-data_path = "./new_data/BreaKHis_Total_dataset"
-
-# Image labels
+# Constants
+data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
+batch_size = 48
+epochs = 30
 
 def loading_data(data_dir):
     data = []
@@ -39,7 +28,6 @@ def loading_data(data_dir):
     for label in labels:
         path = os.path.join(data_dir, label)
         class_num = labels.index(label)
-
         files = os.listdir(path)
         total_files = len(files)
 
@@ -48,7 +36,7 @@ def loading_data(data_dir):
         for i, img in enumerate(files):
             if i % 100 == 0:
                 print(f" Progress: {i}/{total_files}")
-
+            
             img_path = os.path.join(path, img)
             img_arr = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
 
@@ -61,502 +49,414 @@ def loading_data(data_dir):
 
     return np.array(data), np.array(labels_list)
 
-
-
-# Load data
-data, data_labels = loading_data(data_path)
-
-print(f" Data loaded")
-
-
-# # load random data
-# random_indices = np.random.choice(len(data), 6, replace=False)
-
-# #Set up the figure
-# plt.figure(figsize=(8,8))
-
-# # Plot the images
-# for i, index in enumerate(random_indices):
-#     plt.subplot(3, 3, i+1)
-#     plt.imshow(data[index], cmap='gray')
-#     plt.title(
-#         'Benign' if data_labels[index] == 0 else 'Malignant cancer',
-#         fontsize=14,
-#         fontweight='bold',
-#         color='blue' if data_labels[index] == 0 else 'green'
-#     )
-#     plt.axis('off')
-
-# # Add a main title
-# plt.suptitle(
-#     "Random Sample of Breast tumors images",
-#     fontsize=18,
-#     fontweight='bold',
-#     y=1.02
-# )
-
-# # Adjust layout for better spacing
-# plt.tight_layout()
-# # plt.show(block=False)
-# plt.savefig("img1")
-
-
-def data_preprocessing(data, data_labels):
-    # Data Normalizations
-    X_data = np.array(data) / 255
-    print(f"X_data")
-
-    # Reshape the graysclae images to 128x128x1
+def preprocess_data(data, labels):
+    # Enhanced preprocessing with standardization
+    X_data = np.array(data).astype('float32')
+    X_data = (X_data - X_data.mean()) / (X_data.std() + 1e-7)  # Adding epsilon to avoid division by zero
     X_data = X_data.reshape(-1, img_size, img_size, 1)
-    print(f"X_data reshape")
-
-    # Convert grayscale to RGB by duplicating the single channel 3 times
-    # X_data = np.repeat(X_data, 3, axis=-1)
-
-    print(f" X_data shape {X_data.shape}") 
-
-
-
-    # original_X_data = ... # Your original X_data (7783, 224, 224, 1)
-    batch_size = 1000  # Adjust as needed
-    num_samples = X_data.shape[0]
-    new_X_data = []
-
-    for i in range(0, num_samples, batch_size):
-        batch = X_data[i:i + batch_size]
-        rgb_batch = np.concatenate([batch, batch, batch], axis=-1)
-        new_X_data.append(rgb_batch)
-
-    X_data = np.concatenate(X_data, axis=0)
-    print(f"New X_data shape: {X_data.shape}")
-
-
-
-
-
-
-    # X_data = np.concatenate([X_data, X_data, X_data], axis=-1)
-    print(f"X_data rgb")
-    print(f" X_data shape {X_data.shape}") 
-
-    # Convert labels to numpy arrays
-    y_data = np.array(data_labels)
-    print(f"y_data labels")
-    print(f" X_data shape {X_data.shape}")  # This should now show (num_samples, 128, 128, 3)
-
+    print(f"Data shape after preprocessing: {X_data.shape}")
+    
+    y_data = np.array(labels)
+    
     return X_data, y_data
 
-X_data, y_data = data_preprocessing(data, data_labels)
+def check_class_balance(y):
+    unique, counts = np.unique(y, return_counts=True)
+    print(f"Class distribution: {dict(zip([labels[i] for i in unique], counts))}")
+    return counts
 
-     
+def focal_loss(gamma=2.0, alpha=0.75):
+    """
+    Focal Loss for addressing class imbalance.
+    alpha: weighs the importance of positive class (set higher for the minority class)
+    gamma: focuses more on hard examples
+    """
+    def focal_loss_with_logits(logits, targets, alpha, gamma, y_pred):
+        targets = tf.cast(targets, dtype=tf.float32)
+        
+        # Standard binary cross entropy calculation
+        BCE = tf.keras.losses.binary_crossentropy(targets, y_pred)
+        
+        # Focal loss weights
+        alpha_t = targets * alpha + (1 - targets) * (1 - alpha)
+        p_t = targets * y_pred + (1 - targets) * (1 - y_pred)
+        FL = alpha_t * tf.pow(1 - p_t, gamma) * BCE
+        
+        return tf.reduce_mean(FL)
+    
+    def loss(y_true, y_pred):
+        return focal_loss_with_logits(y_pred, y_true, alpha, gamma, y_pred)
+    
+    return loss
 
-# # Data Normalizations
-# X_data = np.array(data) / 255
+def create_dataset(X, y, augment=False):
+    def _generator():
+        for i in range(len(X)):
+            rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
+            label = y[i]
+            yield rgb, label
 
-# print(f"X_data")
+    def _augment(image, label):
+        # Enhanced augmentation pipeline
+        # Random flips
+        image = tf.image.random_flip_left_right(image)
+        image = tf.image.random_flip_up_down(image)
+        
+        # Color augmentations
+        image = tf.image.random_brightness(image, max_delta=0.3)
+        image = tf.image.random_contrast(image, 0.7, 1.3)
+        image = tf.image.random_saturation(image, 0.8, 1.2)
+        
+        # Random rotation with various angles
+        angle = tf.random.uniform([], -0.2, 0.2)  # Random rotation between -11.5 and 11.5 degrees
+        image = tfa.image.rotate(image, angles=angle, fill_mode='reflect')
+        
+        # Random zoom
+        zoom_factor = tf.random.uniform([], 0.8, 1.2)
+        image_shape = tf.shape(image)
+        crop_size = tf.cast(tf.cast(image_shape[:-1], tf.float32) * zoom_factor, tf.int32)
+        if crop_size[0] > 0 and crop_size[1] > 0 and crop_size[0] <= image_shape[0] and crop_size[1] <= image_shape[1]:
+            image = tf.image.random_crop(image, [crop_size[0], crop_size[1], 3])
+            image = tf.image.resize(image, [img_size, img_size])
+        
+        return image, label
 
-# # Reshape the graysclae images to 128x128x1
-# X_data = X_data.reshape(-1, img_size, img_size, 1)
-
-# print(f"X_data reshape")
-
-# Convert grayscale to RGB by duplicating the single channel 3 times
-# X_data = np.repeat(X_data, 3, axis=-1)
-
-# print(f"X_data rgb")
-
-# Convert labels to numpy arrays
-# y_data = np.array(data_labels)
-
-# print(f"y_data labels")
-
-# print(f" X_data shape {X_data.shape}")  # This should now show (num_samples, 128, 128, 3)
-
-# train-validation split on the data
-# val_size = 0.2
-# X_train, X_val, y_train, y_val = train_test_split(
-#     X_data, 
-#     y_data, 
-#     test_size=val_size, 
-#     random_state=42
-# )
-
-
-def data_split(X_data, y_data):
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        X_data, 
-        y_data, 
-        test_size=0.3, 
-        random_state=42
+    ds = tf.data.Dataset.from_generator(
+        _generator,
+        output_signature=(
+            tf.TensorSpec(shape=(img_size, img_size, 3), dtype=tf.float32),
+            tf.TensorSpec(shape=(), dtype=tf.int32)
+        )
     )
 
-    # split temp into val and test
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_temp, 
-        y_temp, 
-        test_size=0.5, 
-        random_state=42
-    )
+    if augment:
+        ds = ds.map(_augment, num_parallel_calls=tf.data.AUTOTUNE)
 
-    # Check the shapes
-    print(f"Training data shape: {X_train.shape}")
-    print(f"Validation data shape: {X_val.shape}")
-    print(f"Test data shape: {X_test.shape}")
-    print(f"Training labels shape: {y_train.shape}")
-    print(f"Validation labels shape: {y_val.shape}")
-    print(f"Test labels shape: {y_test.shape}")
+    return ds.shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-    return X_train, X_val, X_test, y_train, y_val, y_test
-     
-
-
-
-X_train, X_val, X_test, y_train, y_val , y_test = data_split(X_data, y_data)
-
-
-# X_train, X_temp, y_train, y_temp = train_test_split(
-#     X_data, 
-#     y_data, 
-#     test_size=0.3, 
-#     random_state=42
-# )
-
-# # split temp into val and test
-# X_val, X_test, y_val, y_test = train_test_split(
-#     X_temp, 
-#     y_temp, 
-#     test_size=0.5, 
-#     random_state=42
-# )
-
-# # Check the shapes
-# print("Training data shape:", X_train.shape)
-# print("Validation data shape:", X_val.shape)
-# print("Test data shape:", X_test.shape)
-# print("Training labels shape:", y_train.shape)
-# print("Validation labels shape:", y_val.shape)
-# print("Test labels shape:", y_test.shape)
-
-
-
-def data_augmentation(X_train, X_val):
-    # Data Augmentation
-    data_generator = ImageDataGenerator(
-        rotation_range = 30,
-        zoom_range = 0.2,
-        width_shift_range=0.1,
-        height_shift_range=0.1,
-        horizontal_flip = True,
-        shear_range=0.2,
-        fill_mode='nearest'
-    )
-
-    val_data = ImageDataGenerator()
-
-    data_generator.fit(X_train)
-    val_data.fit(X_val)
-
-    train_gen = data_generator.flow(X_train, y_train, batch_size=32)
-    val_gen = val_data.flow(X_val, y_val, batch_size=32)
-
-    return train_gen, val_gen
-
-
-train_gen, val_gen = data_augmentation(X_train, X_val)
-
-
-
-
-
-# # Data Augmentation
-# data_generator = ImageDataGenerator(  
-#                     rotation_range = 30,
-#                     zoom_range = 0.2, 
-#                     width_shift_range=0.1,  
-#                     height_shift_range=0.1,  
-#                     horizontal_flip = True,  
-#                     shear_range=0.2,
-#                     fill_mode='nearest',
-#                  )
-
-# val_data = ImageDataGenerator()
-
-# data_generator.fit(X_train)
-# val_data.fit(X_val)
-
-
-# train_gen = data_generator.flow(X_train, y_train, batch_size=32)
-# val_gen = val_data.flow(X_val, y_val, batch_size=32)
-
-
-
-def train_model(train_gen, val_gen, X_test, y_test):
-    resnet_model = Sequential()
-    pretrained_model= tf.keras.applications.ResNet50(
+def create_resnet_model():
+    # Use ResNet50 with improved architecture
+    base_model = ResNet50(
         include_top=False, 
+        weights='imagenet', 
         input_shape=(img_size, img_size, 3), 
-        pooling='avg', 
-        weights='imagenet'
-    )
-
-    for layer in pretrained_model.layers:
-        layer.trainable=False
-    
-    resnet_model.add(pretrained_model)
-
-    # Fully connected layers for classification
-    resnet_model.add(layers.Flatten())
-    resnet_model.add(layers.Dense(512, activation='relu'))
-    resnet_model.add(layers.Dense(1, activation='sigmoid'))
-
-    # compile and train the model
-    resnet_model.compile(
-        optimizer='adam', 
-        loss='binary_crossentropy', 
-        metrics=['accuracy']
-    )
-
-    checkpoint = ModelCheckpoint(
-        "resnet_1.h5", 
-        monitor='val_accuracy', 
-        verbose=1, 
-        save_best_only=True, 
-        save_weights_only=False, 
-        mode='max', 
-        save_freq=10
+        pooling='avg'
     )
     
-    early = EarlyStopping(
-        monitor='val_accuracy', 
-        min_delta=0, 
-        patience=20, 
-        verbose=1, 
-        mode='max'
+    # Freeze fewer layers to allow more fine-tuning
+    for layer in base_model.layers[:-10]:  # Unfreeze more layers (50 instead of 30)
+        layer.trainable = False
+        
+    inputs = base_model.input
+    x = base_model.output
+    
+    # More complex classification head with batch normalization
+    x = layers.Dense(1024, use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+    x = layers.Dropout(0.5)(x)
+    
+    x = layers.Dense(512, use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+    x = layers.Dropout(0.3)(x)
+    
+    outputs = layers.Dense(1, activation='sigmoid')(x)
+    return tf.keras.Model(inputs, outputs)
+
+def plot_training_history(history, fold):
+    # Plot training & validation accuracy values
+    plt.figure(figsize=(12, 5))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'])
+    plt.plot(history.history['val_accuracy'])
+    plt.title(f'Model Accuracy - Fold {fold + 1}')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Validation'], loc='upper left')
+    
+    # Plot training & validation loss values
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title(f'Model Loss - Fold {fold + 1}')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Validation'], loc='upper left')
+    
+    plt.tight_layout()
+    plt.savefig(f'history_fold{fold+1}.png')
+    plt.close()
+    
+def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
+
+    # Create image writer for this evaluation
+    tb_image_writer = log_images_to_tensorboard(log_dir)
+
+
+    # Get predictions
+    y_pred_prob = model.predict(test_ds)
+    
+    # Extract probabilities and convert to flat array
+    y_pred_prob_flat = []
+    for batch in y_pred_prob:
+        for prob in batch:
+            y_pred_prob_flat.append(prob)
+    y_pred_prob_flat = np.array(y_pred_prob_flat)[:len(y_test)]
+    
+    # Convert probabilities to class predictions
+    y_pred = (y_pred_prob_flat > 0.5).astype(int)
+    
+    # Print classification report
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=labels))
+    
+    # Confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    plt.figure(figsize=(8, 6))
+    fig = plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels, cmap='Blues')
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.tight_layout()
+    plt.savefig('final_confusion_matrix.png')
+    # plt.show()
+
+    log_image(tb_image_writer, 'confusion_matrix', fig, step=epoch)
+    
+    # ROC curve
+    fpr, tpr, _ = roc_curve(y_test, y_pred_prob_flat)
+    roc_auc = auc(fpr, tpr)
+    
+    plt.figure(figsize=(8, 6))
+    fig = plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    plt.savefig('roc_curve.png')
+
+    log_image(tb_image_writer, 'roc_curve', fig, step=epoch)
+    # plt.show()
+    
+    return y_pred, y_pred_prob_flat
+
+def log_images_to_tensorboard(log_dir):
+    """Create a TensorBoard image logger"""
+    file_writer = tf.summary.create_file_writer(log_dir + '/images')
+    return file_writer
+
+def log_image(file_writer, name, figure, step=0):
+    """Log a matplotlib figure to TensorBoard"""
+    with file_writer.as_default():
+        # Convert figure to PNG image
+        buffer = io.BytesIO()
+        figure.savefig(buffer, format='png')
+        buffer.seek(0)
+        
+        # Convert PNG buffer to TF image
+        image = tf.image.decode_png(buffer.getvalue(), channels=4)
+        
+        # Add batch dimension and log
+        image = tf.expand_dims(image, 0)
+        tf.summary.image(name, image, step=step)
+        
+    plt.close(figure)
+
+def train_model():
+
+    # Load and preprocess data
+    print("Loading data...")
+    data, labels_data = loading_data(data_path)
+    X, y = preprocess_data(data, labels_data)
+    
+    # Check class balance and calculate class weights if needed
+    class_counts = check_class_balance(y)
+    if len(np.unique(y)) == 2:  # Binary classification
+        class_weight = {
+            0: len(y) / (2.0 * np.sum(y == 0)),
+            1: len(y) / (2.0 * np.sum(y == 1))
+        }
+        print(f"Using class weights: {class_weight}")
+    else:
+        class_weight = None
+
+    # Split data into train/validation/test
+    X_temp, X_test, y_temp, y_test = train_test_split(
+        X, 
+        y, 
+        test_size=0.15,  # Increased test size for better evaluation
+        random_state=42,
+        stratify=y  # Ensure balanced split
+    )
+
+    kf = KFold(
+        n_splits=5, 
+        shuffle=True, 
+        random_state=42
     )
     
-    resnet_model.fit(
-        train_gen,
-        batch_size=32,
-        validation_data= val_gen, 
-        validation_steps=32,
-        epochs=10,
-        callbacks=[checkpoint,early]
-    )
-
-    history = resnet_model.history.history  # Access the 'history' dictionary
-
-    train_acc = history['accuracy']
-    train_loss = history['loss']
-    val_acc = history['val_accuracy']
-    val_loss = history['val_loss']
-
-    # Epochs
-    epochs = range(1, len(train_acc) + 1)
-
-    evaluation = resnet_model.evaluate(X_test,y_test)
-    print("=="*20)
-    print(evaluation)
-    print(f"Accuracy - {evaluation[1]*100}%")
-    print(f"Loss - {evaluation[0]}")
-    print("=="*20)
-
-    predictions = resnet_model.predict(X_test)
-    predictions = (predictions > 0.5).astype(int)  # Convert probabilities to binary labels
-
-    # Print the classification report
-    print("Classification Report:")
-    # print(classification_report(y_test, predictions, target_names=['Benign', 'Malignant cancer']))
-
-    # Generate the confusion matrix
-    cm = confusion_matrix(y_test, predictions)
-
-
-model = train_model(train_gen, val_gen, X_test, y_test)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#ResNet code
-# resnet_model = Sequential()
-# pretrained_model= tf.keras.applications.ResNet50(include_top=False, 
-#                                                  input_shape=(img_size, img_size, 3), 
-#                                                  pooling='avg', 
-#                                                  weights='imagenet')
-# for layer in pretrained_model.layers:
-#         layer.trainable=False
-# resnet_model.add(pretrained_model)
-
-
-# # Fully connected layers for classification
-# resnet_model.add(layers.Flatten())
-# resnet_model.add(layers.Dense(512, activation='relu'))
-# resnet_model.add(layers.Dense(1, activation='sigmoid'))
-
-
-# # compile and train the model
-
-
-# resnet_model.compile(optimizer='adam', 
-#                      loss='binary_crossentropy', 
-#                      metrics=['accuracy'])
-
-
-
-# checkpoint = ModelCheckpoint(
-#     "resnet_1.h5", 
-#     monitor='val_accuracy', 
-#     verbose=1, 
-#     save_best_only=True, 
-#     save_weights_only=False, 
-#     mode='max', 
-#     save_freq=10
-# )
-
-# early = EarlyStopping(
-#     monitor='val_accuracy', 
-#     min_delta=0, 
-#     patience=20, 
-#     verbose=1, 
-#     mode='max'
-# )
-
-
-# resnet_model.fit(
-#     train_gen,
-#     batch_size=32,
-#     validation_data= val_gen, 
-#     validation_steps=32,
-#     epochs=10,
-#     callbacks=[checkpoint,early]
-# )
-
-
-# history = resnet_model.fit(X_train, 
-#                            validation_data=X_val, 
-#                            epochs=10, 
-#                            batch_size=32)
-
-
-
-# Retrieve metrics from the training history
-# history = resnet_model.history.history  # Access the 'history' dictionary
-
-# train_acc = history['accuracy']
-# train_loss = history['loss']
-# val_acc = history['val_accuracy']
-# val_loss = history['val_loss']
-
-# # Epochs
-# epochs = range(1, len(train_acc) + 1)
-
-
-# Create a figure and axes for the plots
-# fig, ax = plt.subplots(1, 2, figsize=(18, 6))
-
-# # Plot training and validation accuracy
-# ax[0].plot(epochs, train_acc, 'o-', color='darkgreen', label='Training Accuracy', markersize=8)
-# ax[0].plot(epochs, val_acc, 's--', color='darkred', label='Validation Accuracy', markersize=8)
-# ax[0].set_title('Training vs. Validation Accuracy', fontsize=16)
-# ax[0].set_xlabel('Epochs', fontsize=14)
-# ax[0].set_ylabel('Accuracy', fontsize=14)
-# ax[0].legend()
-# ax[0].grid(True)
-
-# # Plot training and validation loss
-# ax[1].plot(epochs, train_loss, 'o-', color='darkblue', label='Training Loss', markersize=8)
-# ax[1].plot(epochs, val_loss, 's--', color='orange', label='Validation Loss', markersize=8)
-# ax[1].set_title('Training vs. Validation Loss', fontsize=16)
-# ax[1].set_xlabel('Epochs', fontsize=14)
-# ax[1].set_ylabel('Loss', fontsize=14)
-# ax[1].legend()
-# ax[1].grid(True)
-
-# # Display the plots
-# plt.tight_layout()
-# # plt.show(block=False)
-# plt.savefig("img2")
-
-# evaluation = resnet_model.evaluate(X_test,y_test)
-# print("=="*20)
-# print(evaluation)
-# print(f"Accuracy - {evaluation[1]*100}%")
-# print(f"Loss - {evaluation[0]}")
-# print("=="*20)
-
-
-
-# predictions = resnet_model.predict(X_test)
-# predictions = (predictions > 0.5).astype(int)  # Convert probabilities to binary labels
-
-# # Print the classification report
-# print("Classification Report:")
-# print(classification_report(y_test, predictions, target_names=['Benign', 'Malignant cancer']))
-
-
-# # Function to plot confusion matrix with percentages
-# def plot_confusion_matrix_with_percentages(cm, model_name):
-#     plt.figure(figsize=(5, 5))
-#     cm_percentage = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis] * 100  # Convert to percentages
-
-#     # Annotate with both raw numbers and percentages
-#     annot = np.empty_like(cm).astype(str)
-#     for i in range(cm.shape[0]):
-#         for j in range(cm.shape[1]):
-#             annot[i, j] = f"{cm[i, j]}\n({cm_percentage[i, j]:.1f}%)"
-
-#     sns.heatmap(cm, annot=annot, fmt="", cmap="Blues", xticklabels=["Benign", "Malignant cancer"], yticklabels=["Non-malignant", "Malignant cancer"])
-#     plt.title(f"Confusion Matrix - {model_name}", fontsize=16)
-#     plt.xlabel("Predicted", fontsize=14)
-#     plt.ylabel("True", fontsize=14)
-#     # plt.show(block=False)
-#     plt.savefig("img3")
-
-
-# # Generate the confusion matrix
-# cm = confusion_matrix(y_test, predictions)
-
-# Plot the confusion matrix with percentages
-# plot_confusion_matrix_with_percentages(cm, "Resnet50")
-
-
-
-# Randomly select 8 indices from the test set
-# random_indices = np.random.choice(len(X_test), 8, replace=False)
-
-# # Define the figure size
-# plt.figure(figsize=(15, 5))
-
-# # Iterate through the selected indices
-# for i, idx in enumerate(random_indices):
-#     plt.subplot(2, 4, i + 1)
-
-#     # Display the image
-#     plt.imshow(X_test[idx].reshape(224, 224, 3), cmap='magma', interpolation='none')
-
-#     # Set the title with predicted and actual classes
-#     title_color = 'red' if predictions[idx] != y_test[idx] else 'green'  # Red if incorrect, green if correct
-#     plt.title(f"Predicted: {predictions[idx]}   Actual: {y_test[idx]}", fontsize=10, color=title_color)
-
-#     # Remove x and y ticks
-#     plt.axis('off')
-
-# # Set the main title for the figure
-# plt.suptitle("Sample Test Images with Predictions", size=18)
-
-# # Adjust layout to prevent overlapping
-# plt.tight_layout()
-
-# # Show the plot
-# # plt.show(block=False)
-# plt.savefig("img4")
+    # Tracking metrics
+    fold_results = []
+    best_model = None
+    best_acc = 0
+    
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X_temp, y_temp)):
+        print(f"\n=========== Fold {fold + 1}/5 ===========")
+
+        X_train, X_val = X_temp[train_idx], X_temp[val_idx]
+        y_train, y_val = y_temp[train_idx], y_temp[val_idx]
+        
+        print(f"Train set: {X_train.shape}, {y_train.shape}")
+        print(f"Validation set: {X_val.shape}, {y_val.shape}")
+
+        # Create datasets with augmentation for training
+        train_ds = create_dataset(X_train, y_train, augment=True)
+        val_ds = create_dataset(X_val, y_val, augment=False)
+        
+        # Create model
+        print("Creating model...")
+        model = create_resnet_model()
+        
+        # Learning rate schedule
+        initial_learning_rate = 1e-5
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate,
+            decay_steps=1000,
+            decay_rate=0.9,
+            staircase=True
+        )
+        
+        optimizer = Adam(learning_rate=lr_schedule)
+        
+        # Compile model with additional metrics
+        model.compile(
+            optimizer=optimizer, 
+            loss=focal_loss(gamma=2.0, alpha=0.75),  # Focus more on benign class
+            # loss='binary_crossentropy', 
+            metrics=[
+                'accuracy', 
+                tf.keras.metrics.AUC(name='auc'),
+                tf.keras.metrics.Precision(name='precision'), 
+                tf.keras.metrics.Recall(name='recall')
+            ]
+        )
+        
+        # Setup callbacks
+        log_dir = f"logs/Resnet_fold{fold+1}_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        
+        callbacks = [
+            EarlyStopping(
+                monitor='val_auc', 
+                patience=10,
+                mode='max',
+                restore_best_weights=True,
+                verbose=1
+            ),
+            ModelCheckpoint(
+                f"ResNet_fold{fold + 1}.h5", 
+                monitor='val_auc',
+                mode='max',
+                save_best_only=True,
+                verbose=1
+            ),
+            ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,
+                patience=5,
+                min_lr=1e-6,
+                verbose=1
+            ),
+            tf.keras.callbacks.TensorBoard(log_dir=log_dir)
+        ]
+
+        # logging
+        tb_image_writer = log_images_to_tensorboard(log_dir)
+        
+        # Train model
+        print("Training model...")
+        history = model.fit(
+            train_ds, 
+            validation_data=val_ds, 
+            epochs=epochs, 
+            callbacks=callbacks,
+            class_weight=class_weight
+        )
+        
+        # Plot training history
+        plot_training_history(history, fold)
+        
+        # Evaluate on validation set
+        val_loss, val_acc, val_auc, val_precision, val_recall = model.evaluate(val_ds)
+        print(f"Fold {fold + 1} - Validation Metrics:")
+        print(f"  Loss: {val_loss:.4f}")
+        print(f"  Accuracy: {val_acc:.4f}")
+        print(f"  AUC: {val_auc:.4f}")
+        print(f"  Precision: {val_precision:.4f}")
+        print(f"  Recall: {val_recall:.4f}")
+        
+        # Store results
+        fold_results.append({
+            'fold': fold + 1,
+            'val_loss': val_loss,
+            'val_acc': val_acc,
+            'val_auc': val_auc,
+            'val_precision': val_precision,
+            'val_recall': val_recall
+        })
+        
+        # Keep track of best model
+        if val_acc > best_acc:
+            best_acc = val_acc
+            best_model = model
+
+    # Print summary of cross-validation
+    print("\n======= Cross-Validation Results =======")
+    metrics = ['val_loss', 'val_acc', 'val_auc', 'val_precision', 'val_recall']
+    for metric in metrics:
+        values = [result[metric] for result in fold_results]
+        print(f"Mean {metric}: {np.mean(values):.4f} (±{np.std(values):.4f})")
+
+    # Create test dataset
+    test_ds = create_dataset(X_test, y_test, augment=False)
+    
+    # Evaluate best model on test set
+    print("\n======= Final Evaluation on Test Set =======")
+    test_loss, test_acc, test_auc, test_precision, test_recall = best_model.evaluate(test_ds)
+    print(f"Test Loss: {test_loss:.4f}")
+    print(f"Test Accuracy: {test_acc:.4f}")
+    print(f"Test AUC: {test_auc:.4f}")
+    print(f"Test Precision: {test_precision:.4f}")
+    print(f"Test Recall: {test_recall:.4f}")
+    
+    # Detailed evaluation with confusion matrix and ROC curve
+    final_log_dir = "logs/final_evaluation_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    y_pred, y_pred_prob = evaluate_model(best_model, test_ds, y_test, final_log_dir)
+    
+    # Save best model
+    best_model.save('best_histopathology_model.h5')
+    print("Best model saved as 'best_histopathology_model.h5'")
+
+if __name__ == "__main__":
+    # Set memory growth for GPU
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if physical_devices:
+        try:
+            for device in physical_devices:
+                tf.config.experimental.set_memory_growth(device, True)
+            print(f"Found {len(physical_devices)} GPU(s). Memory growth enabled.")
+        except Exception as e:
+            print(f"Error setting memory growth: {e}")
+    
+    # Set random seeds for reproducibility
+    np.random.seed(42)
+    tf.random.set_seed(42)
+    
+    # Train model
+    train_model()
