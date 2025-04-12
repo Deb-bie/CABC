@@ -95,94 +95,80 @@ def focal_loss(gamma=2.0, alpha=0.75):
     return loss
 
 
+import tensorflow as tf
+import tensorflow_addons as tfa
+import numpy as np
+
 def _strong_augment(image):
-    # Strong augmentation for underrepresented class
-    
-    # Random flips
+    # Random flip
     image = tf.image.random_flip_left_right(image)
     image = tf.image.random_flip_up_down(image)
-    
-    # Multiple random rotations (more varied angles)
-    angle = tf.random.uniform([], -0.4, 0.4)  # About ±23 degrees
+
+    # Rotation
+    angle = tf.random.uniform([], -0.4, 0.4)
     image = tfa.image.rotate(image, angles=angle, fill_mode='reflect')
-    
-    # Random zoom and crop
+
+    # Zoom & crop
     zoom_factor = tf.random.uniform([], 0.7, 1.3)
-    image_shape = tf.shape(image)
-    crop_size = tf.cast(tf.cast(image_shape[:-1], tf.float32) * zoom_factor, tf.int32)
-    if crop_size[0] > 0 and crop_size[1] > 0 and crop_size[0] <= image_shape[0] and crop_size[1] <= image_shape[1]:
-        image = tf.image.random_crop(image, [crop_size[0], crop_size[1], 3])
-        image = tf.image.resize(image, [img_size, img_size])
-    
-    # Color transformations
+    crop_size = tf.cast(tf.cast(tf.shape(image)[:2], tf.float32) * zoom_factor, tf.int32)
+    crop_size = tf.minimum(crop_size, tf.shape(image)[:2])
+    image = tf.image.resize_with_crop_or_pad(image, crop_size[0], crop_size[1])
+    image = tf.image.resize(image, [img_size, img_size])
+
+    # Color jitter
     image = tf.image.random_brightness(image, max_delta=0.5)
     image = tf.image.random_contrast(image, 0.5, 1.5)
     image = tf.image.random_saturation(image, 0.6, 1.4)
-    
-    # Add random noise
-    noise = tf.random.normal(shape=tf.shape(image), mean=0.0, stddev=0.08)
+
+    # Noise
+    noise = tf.random.normal(tf.shape(image), mean=0.0, stddev=0.08)
     image = tf.clip_by_value(image + noise, 0.0, 1.0)
-    
-    # Random translation
-    translation = tf.random.uniform([2], -0.2, 0.2, dtype=tf.float32)
-    image = tfa.image.translate(image, translation * img_size, fill_mode='reflect')
-    
+
+    # Translation
+    translation = tf.random.uniform([2], -0.2, 0.2) * img_size
+    image = tfa.image.translate(image, translation, fill_mode='reflect')
+
     return image
 
+def _standard_augment(image, label):
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_flip_up_down(image)
+    angle = tf.random.uniform([], -0.2, 0.2)
+    image = tfa.image.rotate(image, angles=angle, fill_mode='reflect')
+    image = tf.image.random_brightness(image, max_delta=0.2)
+    image = tf.image.random_contrast(image, 0.8, 1.2)
+    return image, label
 
-def create_dataset(X, y, augment=False):
-    # Separate samples by class
-    benign_indices = np.where(y == 0)[0]
-    malignant_indices = np.where(y == 1)[0]
-    
-    # Calculate how many extra benign samples we need through augmentation
-    augmentation_factor = len(malignant_indices) // len(benign_indices)
-    
-    def _generator():
-        # Include all original samples
-        for i in range(len(X)):
-            rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
-            label = y[i]
-            yield rgb, label
-            
-        # Extra augmentation for benign class if needed
-        if augment:
-            for _ in range(augmentation_factor - 1):  # -1 because we already included original samples
-                for i in benign_indices:
-                    rgb = tf.image.grayscale_to_rgb(tf.convert_to_tensor(X[i]))
-                    # Apply strong augmentation to create diverse samples
-                    rgb = _strong_augment(rgb)
-                    yield rgb, 0  # benign class
-    
-    def _augment(image, label):
-        # Standard augmentation for all samples
-        if tf.random.uniform([], 0, 1) > 0.5:
-            image = tf.image.random_flip_left_right(image)
-        if tf.random.uniform([], 0, 1) > 0.5:
-            image = tf.image.random_flip_up_down(image)
-            
-        # Random rotation
-        angle = tf.random.uniform([], -0.2, 0.2)
-        image = tfa.image.rotate(image, angles=angle, fill_mode='reflect')
-        
-        # Color jitter
-        image = tf.image.random_brightness(image, max_delta=0.2)
-        image = tf.image.random_contrast(image, 0.8, 1.2)
-        
-        return image, label
+def create_dataset(X, y, augment=False, balance_benign=True):
+    # Create tf.data.Dataset from X, y
+    X = tf.convert_to_tensor(X, dtype=tf.float32)
+    X = tf.image.grayscale_to_rgb(X)  # Convert once instead of per sample
+    y = tf.convert_to_tensor(y, dtype=tf.int32)
 
-    ds = tf.data.Dataset.from_generator(
-        _generator,
-        output_signature=(
-            tf.TensorSpec(shape=(img_size, img_size, 3), dtype=tf.float32),
-            tf.TensorSpec(shape=(), dtype=tf.int32)
-        )
-    )
+    benign_mask = tf.where(y == 0)
+    malignant_mask = tf.where(y == 1)
+
+    ds = tf.data.Dataset.from_tensor_slices((X, y))
+
+    if augment and balance_benign:
+        # Repeat benign samples to balance the dataset
+        benign_ds = ds.filter(lambda img, lbl: lbl == 0).map(
+            lambda img, lbl: (_strong_augment(img), lbl), num_parallel_calls=tf.data.AUTOTUNE
+        ).repeat(augmentation_factor - 1)
+
+        full_ds = ds.concatenate(benign_ds)
+    else:
+        full_ds = ds
 
     if augment:
-        ds = ds.map(_augment, num_parallel_calls=tf.data.AUTOTUNE)
+        full_ds = full_ds.map(_standard_augment, num_parallel_calls=tf.data.AUTOTUNE)
 
-    return ds.shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    # Final dataset ops
+    return (full_ds
+            .shuffle(1000)
+            .batch(batch_size)
+            .prefetch(tf.data.AUTOTUNE))
+
 
 def create_resnet_model():
     # Use ResNet50 with improved architecture
