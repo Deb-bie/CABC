@@ -95,39 +95,43 @@ def focal_loss(gamma=2.0, alpha=0.75):
     return loss
 
 
-import tensorflow as tf
-import tensorflow_addons as tfa
-import numpy as np
 
 def _strong_augment(image):
     # Random flip
     image = tf.image.random_flip_left_right(image)
     image = tf.image.random_flip_up_down(image)
-
+    
     # Rotation
     angle = tf.random.uniform([], -0.4, 0.4)
     image = tfa.image.rotate(image, angles=angle, fill_mode='reflect')
-
-    # Zoom & crop
+    
+    # Zoom & crop - FIXED to avoid dtype issues
     zoom_factor = tf.random.uniform([], 0.7, 1.3)
-    crop_size = tf.cast(tf.cast(tf.shape(image)[:2], tf.float32) * zoom_factor, tf.int32)
-    crop_size = tf.minimum(crop_size, tf.shape(image)[:2])
+    original_shape = tf.shape(image)[:2]
+    # Cast consistently to tf.int32 throughout
+    crop_size = tf.cast(tf.cast(original_shape, tf.float32) * zoom_factor, tf.int32)
+    crop_size = tf.minimum(crop_size, original_shape)
+    
+    # Handle the case where crop_size dimensions could be zero
+    crop_size = tf.maximum(crop_size, [1, 1])
+    
+    # Safer resizing
     image = tf.image.resize_with_crop_or_pad(image, crop_size[0], crop_size[1])
     image = tf.image.resize(image, [img_size, img_size])
-
+    
     # Color jitter
     image = tf.image.random_brightness(image, max_delta=0.5)
     image = tf.image.random_contrast(image, 0.5, 1.5)
     image = tf.image.random_saturation(image, 0.6, 1.4)
-
+    
     # Noise
     noise = tf.random.normal(tf.shape(image), mean=0.0, stddev=0.08)
     image = tf.clip_by_value(image + noise, 0.0, 1.0)
-
+    
     # Translation
-    translation = tf.random.uniform([2], -0.2, 0.2) * img_size
+    translation = tf.random.uniform([2], -0.2, 0.2) * tf.cast(img_size, tf.float32)
     image = tfa.image.translate(image, translation, fill_mode='reflect')
-
+    
     return image
 
 def _standard_augment(image, label):
@@ -140,35 +144,55 @@ def _standard_augment(image, label):
     return image, label
 
 def create_dataset(X, y, augment=False, balance_benign=True):
-    # Create tf.data.Dataset from X, y
+    # Explicitly ensure all types are consistent
     X = tf.convert_to_tensor(X, dtype=tf.float32)
     X = tf.image.grayscale_to_rgb(X)  # Convert once instead of per sample
     y = tf.convert_to_tensor(y, dtype=tf.int32)
-
-    benign_mask = tf.where(y == 0)
-    malignant_mask = tf.where(y == 1)
-
-    # Compute augmentation factor for benign class
-    num_benign = tf.shape(benign_mask)[0]
-    num_malignant = tf.shape(malignant_mask)[0]
-    augmentation_factor = max(num_malignant // num_benign, 1)
-
+    
+    # Create dataset from tensors
     ds = tf.data.Dataset.from_tensor_slices((X, y))
-
+    
     if augment and balance_benign:
-        # Repeat benign samples to balance the dataset
-        benign_ds = ds.filter(lambda img, lbl: lbl == 0).map(
-            lambda img, lbl: (_strong_augment(img), lbl), num_parallel_calls=tf.data.AUTOTUNE
+        # Count benign and malignant samples
+        benign_mask = tf.cast(tf.where(tf.equal(y, 0)), tf.int32)
+        malignant_mask = tf.cast(tf.where(tf.equal(y, 1)), tf.int32)
+        
+        # Compute augmentation factor for benign class
+        num_benign = tf.shape(benign_mask)[0]
+        num_malignant = tf.shape(malignant_mask)[0]
+        
+        # Handle the case where num_benign could be zero
+        safe_num_benign = tf.maximum(num_benign, 1)
+        
+        # Ensure integer division results in at least 1
+        malignant_per_benign = tf.cast(tf.math.ceil(
+            tf.cast(num_malignant, tf.float32) / tf.cast(safe_num_benign, tf.float32)
+        ), tf.int32)
+        
+        # Ensure we repeat at least once
+        augmentation_factor = tf.maximum(malignant_per_benign, 1)
+        
+        # Filter benign samples and apply strong augmentation
+        benign_ds = ds.filter(
+            lambda img, lbl: tf.equal(lbl, 0)
+        ).map(
+            lambda img, lbl: (_strong_augment(img), lbl),
+            num_parallel_calls=tf.data.AUTOTUNE
         ).repeat(augmentation_factor - 1)
-
+        
+        # Concatenate with the original dataset
         full_ds = ds.concatenate(benign_ds)
     else:
         full_ds = ds
-
+    
+    # Apply standard augmentation if requested
     if augment:
-        full_ds = full_ds.map(_standard_augment, num_parallel_calls=tf.data.AUTOTUNE)
-
-    # Final dataset ops
+        full_ds = full_ds.map(
+            _standard_augment, 
+            num_parallel_calls=tf.data.AUTOTUNE
+        )
+    
+    # Final dataset operations
     return (full_ds
             .shuffle(1000)
             .batch(batch_size)
