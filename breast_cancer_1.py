@@ -14,12 +14,17 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 from tensorflow.keras.applications import ResNet50 # type: ignore
 import tensorflow_addons as tfa # type: ignore
 
+from tensorflow.keras import mixed_precision
+
+# Enable mixed precision
+mixed_precision.set_global_policy('mixed_float16')
+
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 2
-epochs = 2
+batch_size = 10
+epochs = 5
 
 def loading_data(data_dir):
     data = []
