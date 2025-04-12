@@ -149,8 +149,8 @@ def create_dataset(X, y, augment=False, balance_benign=True):
     malignant_mask = tf.where(y == 1)
 
     # Compute augmentation factor for benign class
-    num_benign = tf.shape(benign_indices)[0]
-    num_malignant = tf.shape(malignant_indices)[0]
+    num_benign = tf.shape(benign_mask)[0]
+    num_malignant = tf.shape(malignant_mask)[0]
     augmentation_factor = tf.maximum(num_malignant // num_benign, 1)
 
     ds = tf.data.Dataset.from_tensor_slices((X, y))
