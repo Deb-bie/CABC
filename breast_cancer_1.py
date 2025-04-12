@@ -14,10 +14,10 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 from tensorflow.keras.applications import ResNet50 # type: ignore
 import tensorflow_addons as tfa # type: ignore
 
-from tensorflow.keras import mixed_precision
+# from tensorflow.keras import mixed_precision
 
 # Enable mixed precision
-mixed_precision.set_global_policy('mixed_float16')
+# mixed_precision.set_global_policy('mixed_float16')
 
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
