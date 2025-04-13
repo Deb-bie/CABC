@@ -321,10 +321,7 @@ for epoch in range(epochs):
 
         training_loss += loss.item()
 
-
-    
-
-  print(f'Epoch {epoch + 1}/{epochs} loss: {training_loss  / len(train_loader) :.3f}')
+    print(f'Epoch {epoch + 1}/{epochs} loss: {training_loss  / len(train_loader) :.3f}')
 
 
 
