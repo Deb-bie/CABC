@@ -144,7 +144,7 @@ def create_resnet_model():
     )
     
     # Freeze fewer layers to allow more fine-tuning
-    for layer in base_model.layers[:-10]:  # Unfreeze more layers (50 instead of 30)
+    for layer in base_model.layers[:-20]:  
         layer.trainable = False
         
     inputs = base_model.input
