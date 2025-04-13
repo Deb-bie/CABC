@@ -293,7 +293,7 @@ def train_model():
         stratify=y  # Ensure balanced split
     )
 
-        kf = KFold(
+    kf = KFold(
         n_splits=5, 
         shuffle=True, 
         random_state=42
