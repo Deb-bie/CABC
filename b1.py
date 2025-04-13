@@ -6,6 +6,10 @@ from torch.utils.data import DataLoader
 from torchvision.datasets.mnist import MNIST
 import numpy as np
 from sklearn.model_selection import train_test_split
+import os
+import cv2 # type: ignore
+import io
+
 
 
 # Constants
