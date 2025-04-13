@@ -311,7 +311,7 @@ def train_model():
         
         # Create model
         print("Creating model...")
-        model = create_resnet_model()
+        model = create_vit_model()
         
         # Learning rate schedule
         initial_learning_rate = 1e-5
