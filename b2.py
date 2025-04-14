@@ -29,6 +29,8 @@ epochs = 20  # Increased from 5 to 20
 alpha = 0.001  # Adjusted learning rate
 weight_decay = 1e-4  # Added weight decay for regularization
 
+
+
 # Patch Embeddings
 class PatchEmbedding(nn.Module):
     def __init__(self, d_model, img_size, patch_size, n_channels):
@@ -221,43 +223,147 @@ class VisionTransformer(nn.Module):
         x = self.classifier(x[:, 0])
         return x
 
-# Custom Dataset with Augmentation
+# # Custom Dataset with Augmentation
+# class MedicalImageDataset(Dataset):
+#     def __init__(self, images, labels, transform=None, augment=False):
+#         self.images = images
+#         self.labels = labels
+#         self.transform = transform
+#         self.augment = augment
+        
+#         # Data augmentation transforms
+#         if augment:
+#             self.augmentation = T.Compose([
+#                 T.RandomHorizontalFlip(p=0.5),
+#                 T.RandomVerticalFlip(p=0.5),
+#                 T.RandomRotation(degrees=15),
+#                 T.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+#                 T.ColorJitter(brightness=0.2, contrast=0.2)
+#             ])
+        
+#     def __len__(self):
+#         return len(self.images)
+    
+#     def __getitem__(self, idx):
+#         image = self.images[idx]
+#         label = self.labels[idx]
+        
+#         # Convert numpy array to tensor and add channel dimension
+#         image = torch.from_numpy(image).float().unsqueeze(0)
+        
+#         # Apply data augmentation if enabled
+#         if self.augment:
+#             image = self.augmentation(image)
+            
+#         # Apply normalization transform
+#         if self.transform:
+#             image = self.transform(image)
+            
+#         return image, label
+
+
+
+
+# Custom Dataset with Class-Specific Augmentation
 class MedicalImageDataset(Dataset):
-    def __init__(self, images, labels, transform=None, augment=False):
+    def __init__(self, images, labels, transform=None, augment=False, 
+                 benign_augment_factor=3):  # New parameter for benign augmentation factor
         self.images = images
         self.labels = labels
         self.transform = transform
         self.augment = augment
+        self.benign_augment_factor = benign_augment_factor
         
-        # Data augmentation transforms
+        # Store indices by class for controlled augmentation
+        self.benign_indices = [i for i, label in enumerate(labels) if label == 0]
+        self.malignant_indices = [i for i, label in enumerate(labels) if label == 1]
+        
+        print(f"Dataset contains {len(self.benign_indices)} benign and {len(self.malignant_indices)} malignant samples")
+        
+        # Standard data augmentation transforms
         if augment:
-            self.augmentation = T.Compose([
+            self.standard_augmentation = T.Compose([
                 T.RandomHorizontalFlip(p=0.5),
                 T.RandomVerticalFlip(p=0.5),
                 T.RandomRotation(degrees=15),
                 T.RandomAffine(degrees=0, translate=(0.1, 0.1)),
                 T.ColorJitter(brightness=0.2, contrast=0.2)
             ])
-        
+            
+            # More aggressive augmentation for benign class
+            self.aggressive_augmentation = T.Compose([
+                T.RandomHorizontalFlip(p=0.7),
+                T.RandomVerticalFlip(p=0.7),
+                T.RandomRotation(degrees=30),
+                T.RandomAffine(degrees=15, translate=(0.2, 0.2), scale=(0.8, 1.2), shear=15),
+                T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1)
+            ])
+    
     def __len__(self):
-        return len(self.images)
+        if not self.augment:
+            return len(self.images)
+        
+        # When augmenting, we're essentially expanding the benign class
+        return len(self.malignant_indices) + len(self.benign_indices) * self.benign_augment_factor
     
     def __getitem__(self, idx):
-        image = self.images[idx]
-        label = self.labels[idx]
-        
-        # Convert numpy array to tensor and add channel dimension
-        image = torch.from_numpy(image).float().unsqueeze(0)
-        
-        # Apply data augmentation if enabled
-        if self.augment:
-            image = self.augmentation(image)
+        if not self.augment:
+            # Regular behavior for validation/test sets
+            image = self.images[idx]
+            label = self.labels[idx]
             
+            # Convert numpy array to tensor and add channel dimension
+            image = torch.from_numpy(image).float().unsqueeze(0)
+            
+            # Apply normalization transform
+            if self.transform:
+                image = self.transform(image)
+            
+            # For binary cross-entropy: convert label to float tensor
+            label = torch.tensor([float(label)], dtype=torch.float32)
+            
+            return image, label
+        
+        # Training set with augmentation
+        if idx < len(self.malignant_indices):
+            # Return a malignant sample
+            real_idx = self.malignant_indices[idx]
+            image = self.images[real_idx]
+            label = 1.0  # Malignant
+            
+            # Convert numpy array to tensor and add channel dimension
+            image = torch.from_numpy(image).float().unsqueeze(0)
+            
+            # Apply standard augmentation
+            image = self.standard_augmentation(image)
+        else:
+            # Return a benign sample with more aggressive augmentation
+            # Map the index to one of the benign indices (with wrapping)
+            adjusted_idx = (idx - len(self.malignant_indices)) % len(self.benign_indices)
+            real_idx = self.benign_indices[adjusted_idx]
+            image = self.images[real_idx]
+            label = 0.0  # Benign
+            
+            # Convert numpy array to tensor and add channel dimension
+            image = torch.from_numpy(image).float().unsqueeze(0)
+            
+            # Randomly choose between standard and aggressive augmentation
+            # With higher probability for aggressive on benign samples
+            if np.random.random() < 0.7:  # 70% chance of aggressive augmentation
+                image = self.aggressive_augmentation(image)
+            else:
+                image = self.standard_augmentation(image)
+        
         # Apply normalization transform
         if self.transform:
             image = self.transform(image)
-            
+        
+        # For binary cross-entropy: convert label to float tensor
+        label = torch.tensor([float(label)], dtype=torch.float32)
+        
         return image, label
+
+
 
 # Data loading functions
 def loading_data(data_dir, img_size):
