@@ -214,7 +214,6 @@ def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
     
     # Confusion matrix
     cm = confusion_matrix(y_test, y_pred)
-    plt.figure(figsize=(8, 6))
     fig = plt.figure(figsize=(8, 6))
     sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels, cmap='Blues')
     plt.title('Confusion Matrix')
@@ -230,7 +229,6 @@ def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
     fpr, tpr, _ = roc_curve(y_test, y_pred_prob_flat)
     roc_auc = auc(fpr, tpr)
     
-    plt.figure(figsize=(8, 6))
     fig = plt.figure(figsize=(8, 6))
     plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
     plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
