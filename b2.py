@@ -14,7 +14,7 @@ data_path = "../../../data/BreaKHis_Total_dataset"  # Original data path preserv
 labels = ['benign', 'malignant']
 
 # Fixed: Changed d_model to be divisible by n_heads
-d_model = 64  # Changed from 2 to 12 (divisible by n_heads=3)
+d_model = 60  # Changed from 2 to 12 (divisible by n_heads=3)
 n_classes = 2  # Binary classification (benign/malignant)
 img_size = 32  # Using single value for square images
 patch_size = 16  # Using single value for square patches
