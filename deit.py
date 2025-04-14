@@ -16,6 +16,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.utils import plot_model
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
+import tensorflow_addons as tfa # type: ignore
 
 
 # Constants
