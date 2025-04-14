@@ -403,9 +403,9 @@ if __name__ == "__main__":
         test_dataset = MedicalImageDataset(X_test, y_test, transform, augment=False)
         
         # Create dataloaders
-        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size, num_workers=4)
-        val_loader = DataLoader(val_dataset, shuffle=False, batch_size=batch_size, num_workers=4)
-        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=batch_size, num_workers=4)
+        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=batch_size, num_workers=2)
+        val_loader = DataLoader(val_dataset, shuffle=False, batch_size=batch_size, num_workers=2)
+        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=batch_size, num_workers=2)
         
         # Initialize model
         transformer = VisionTransformer(
