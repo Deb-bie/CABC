@@ -151,9 +151,12 @@ def create_deit_model():
     
     # Load the DeiT model with the pretrained weights
     deit_model = hub.KerasLayer(deit_url, trainable=True)
-    
-    # Get the feature vector from DeiT
-    x = deit_model(x)
+
+    # Get outputs (returns multiple tensors)
+    deit_outputs = deit_model(x)
+
+    # Extract the class token (first output) for classification
+    x = deit_outputs[0]  # Shape: (batch_size, 1000)
     
     # Add classification head
     x = layers.Dense(1024, use_bias=False)(x)
@@ -327,6 +330,7 @@ def train_model():
         # Create DeiT model instead of ResNet
         print("Creating DeiT model...")
         model = create_deit_model()
+        model.summary()
         
         # Learning rate schedule - lower initial rate for transformer models
         initial_learning_rate = 5e-6  # Lower learning rate for transformer-based models
