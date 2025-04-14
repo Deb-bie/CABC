@@ -24,7 +24,7 @@ n_channels = 1
 n_heads = 8  # Increased from 3 to 8
 n_layers = 6  # Increased from 3 to 6
 dropout_rate = 0.1  # Added dropout rate for regularization
-batch_size = 64  # Reduced batch size due to larger model
+batch_size = 32  # Reduced batch size due to larger model
 epochs = 20  # Increased from 5 to 20
 alpha = 0.001  # Adjusted learning rate
 weight_decay = 1e-4  # Added weight decay for regularization
@@ -317,6 +317,10 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
+
+        # Optional: Clear cache every N batches
+        if batch_idx % 100 == 0 and torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
         running_loss += loss.item()
         
@@ -329,6 +333,7 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
     epoch_acc = 100 * correct / total
     
     return epoch_loss, epoch_acc
+
 
 # Validation function
 def validate(model, dataloader, criterion, device):
@@ -349,9 +354,15 @@ def validate(model, dataloader, criterion, device):
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+
+    # Clear cache after validation
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     
     val_loss = running_loss / len(dataloader)
     val_acc = 100 * correct / total
+
+
     
     return val_loss, val_acc
 
