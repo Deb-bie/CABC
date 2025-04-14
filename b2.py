@@ -16,14 +16,14 @@ labels = ['benign', 'malignant']
 # Fixed: Changed d_model to be divisible by n_heads
 d_model = 240  # Changed from 2 to 12 (divisible by n_heads=3)
 n_classes = 2  # Binary classification (benign/malignant)
-img_size = 32  # Using single value for square images
+img_size = 64  # Using single value for square images
 patch_size = 16  # Using single value for square patches
 n_channels = 1
 n_heads = 3
 n_layers = 3
 batch_size = 128
 epochs = 10
-alpha = 0.0001
+alpha = 0.005
 
 # Patch Embeddings
 class PatchEmbedding(nn.Module):
