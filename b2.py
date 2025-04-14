@@ -18,7 +18,7 @@ labels = ['benign', 'malignant']
 # Improved model parameters
 d_model = 128  # Increased from 12 to 128 for more representational power
 n_classes = 2
-img_size = 64  # Increased from 32 to 64 for better resolution
+img_size = 224  # Increased from 32 to 64 for better resolution
 patch_size = 8  # Reduced from 16 to 8 to have more patches per image
 n_channels = 1
 n_heads = 8  # Increased from 3 to 8
