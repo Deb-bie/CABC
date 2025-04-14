@@ -318,9 +318,9 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
         loss.backward()
         optimizer.step()
 
-        # Optional: Clear cache every N batches
-        if batch_idx % 100 == 0 and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        # # Optional: Clear cache every N batches
+        # if batch_idx % 100 == 0 and torch.cuda.is_available():
+        #     torch.cuda.empty_cache()
         
         running_loss += loss.item()
         
