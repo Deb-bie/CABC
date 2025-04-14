@@ -650,23 +650,38 @@ if __name__ == "__main__":
         transformer.load_state_dict(torch.load('best_model.pth'))
         
         # Final evaluation on test set
-        transformer.eval()
-        test_result = validate(transformer, test_loader, criterion, device)
-        test_loss, test_acc, benign_acc, malignant_acc, report, conf_matrix, auc = test_result
+        # transformer.eval()
+        # test_result = validate(transformer, test_loader, criterion, device)
+        # test_loss, test_acc, benign_acc, malignant_acc, report, conf_matrix, auc = test_result
         
+        # print("\nFinal Test Results:")
+        # print(f'Overall Accuracy: {test_acc:.2f}%')
+        # print(f'Benign Accuracy: {benign_acc:.2f}%')
+        # print(f'Malignant Accuracy: {malignant_acc:.2f}%')
+        # print(f'Balanced Accuracy: {(benign_acc + malignant_acc) / 2:.2f}%')
+
+
+        transformer.eval()
+        test_loss, test_acc, benign_acc, malignant_acc = validate(transformer, test_loader, criterion, device)
+
         print("\nFinal Test Results:")
         print(f'Overall Accuracy: {test_acc:.2f}%')
         print(f'Benign Accuracy: {benign_acc:.2f}%')
         print(f'Malignant Accuracy: {malignant_acc:.2f}%')
         print(f'Balanced Accuracy: {(benign_acc + malignant_acc) / 2:.2f}%')
-        if auc is not None:
-            print(f'AUC-ROC: {auc:.4f}')
+
+
+
+
+
+        # if auc is not None:
+        #     print(f'AUC-ROC: {auc:.4f}')
         
-        print("\nConfusion Matrix:")
-        print(conf_matrix)
+        # print("\nConfusion Matrix:")
+        # print(conf_matrix)
         
-        print("\nClassification Report:")
-        print(report)
+        # print("\nClassification Report:")
+        # print(report)
     
     except Exception as e:
         print(f"An error occurred: {e}")
