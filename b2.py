@@ -23,7 +23,7 @@ patch_size = 8  # Reduced from 16 to 8 to have more patches per image
 n_channels = 1
 n_heads = 8  # Increased from 3 to 8
 n_layers = 6  # Increased from 3 to 6
-dropout_rate = 0.1  # Added dropout rate for regularization
+dropout_rate = 0.3  # Added dropout rate for regularization
 batch_size = 32  # Reduced batch size due to larger model
 epochs = 20  # Increased from 5 to 20
 alpha = 0.001  # Adjusted learning rate
@@ -181,7 +181,7 @@ class TransformerEncoder(nn.Module):
 
 # Vision Transformer Model
 class VisionTransformer(nn.Module):
-    def __init__(self, d_model, n_classes, img_size, patch_size, n_channels, n_heads, n_layers, dropout_rate=0.1):
+    def __init__(self, d_model, img_size, patch_size, n_channels, n_heads, n_layers, dropout_rate=0.1):
         super().__init__()
 
         # Convert scalar img_size/patch_size to tuples if they're not already
@@ -193,7 +193,6 @@ class VisionTransformer(nn.Module):
         assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
 
         self.d_model = d_model
-        self.n_classes = n_classes
         self.n_channels = n_channels
         self.n_heads = n_heads
         self.dropout_rate = dropout_rate
@@ -207,20 +206,21 @@ class VisionTransformer(nn.Module):
             TransformerEncoder(self.d_model, self.n_heads, dropout_rate) for _ in range(n_layers)
         ])
 
-        # Classification MLP with dropout
+        # Classification MLP with single output for binary classification
         self.classifier = nn.Sequential(
-            nn.LayerNorm(self.d_model),  # Added LayerNorm
+            nn.LayerNorm(self.d_model),
             nn.Linear(self.d_model, self.d_model // 2),
             nn.GELU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(self.d_model // 2, self.n_classes)
+            nn.Linear(self.d_model // 2, 1)  # Single output for binary classification
+            # Note: No sigmoid here as we'll use BCEWithLogitsLoss
         )
 
     def forward(self, images):
         x = self.patch_embedding(images)
         x = self.positional_encoding(x)
         x = self.transformer_encoder(x)
-        x = self.classifier(x[:, 0])
+        x = self.classifier(x[:, 0])  # Only use the class token
         return x
 
 # # Custom Dataset with Augmentation
@@ -363,8 +363,6 @@ class MedicalImageDataset(Dataset):
         
         return image, label
 
-
-
 # Data loading functions
 def loading_data(data_dir, img_size):
     data = []
@@ -405,6 +403,12 @@ def preprocess_data(data, labels):
     
     y_data = np.array(labels)
     
+    # Print class distribution
+    unique, counts = np.unique(y_data, return_counts=True)
+    class_distribution = dict(zip(unique, counts))
+    for class_idx, count in class_distribution.items():
+        print(f"Class {labels[class_idx]}: {count} samples")
+    
     return X_data, y_data
 
 # Training function
@@ -423,15 +427,11 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-
-        # # Optional: Clear cache every N batches
-        # if batch_idx % 100 == 0 and torch.cuda.is_available():
-        #     torch.cuda.empty_cache()
         
         running_loss += loss.item()
         
-        # Calculate accuracy during training
-        _, predicted = torch.max(outputs.data, 1)
+        # Calculate accuracy during training - binary classification
+        predicted = (torch.sigmoid(outputs) > 0.5).float()
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
     
@@ -448,6 +448,13 @@ def validate(model, dataloader, criterion, device):
     correct = 0
     total = 0
     
+    # For per-class accuracy
+    class_correct = [0, 0]  # benign, malignant
+    class_total = [0, 0]
+    
+    predictions = []
+    true_labels = []
+    
     with torch.no_grad():
         for inputs, labels in tqdm(dataloader, desc="Validating"):
             inputs, labels = inputs.to(device), labels.to(device)
@@ -457,20 +464,48 @@ def validate(model, dataloader, criterion, device):
             
             running_loss += loss.item()
             
-            _, predicted = torch.max(outputs.data, 1)
+            # Calculate accuracy - binary classification
+            predicted = (torch.sigmoid(outputs) > 0.5).float()
+            
+            # Store predictions and true labels for later analysis
+            predictions.extend(predicted.cpu().numpy())
+            true_labels.extend(labels.cpu().numpy())
+            
+            # Overall accuracy
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-
-    # Clear cache after validation
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+            
+            # Per-class accuracy
+            for i in range(len(labels)):
+                label = int(labels[i].item())
+                class_total[label] += 1
+                if predicted[i].item() == label:
+                    class_correct[label] += 1
     
     val_loss = running_loss / len(dataloader)
     val_acc = 100 * correct / total
-
-
     
-    return val_loss, val_acc
+    # Per-class accuracy
+    benign_acc = 100 * class_correct[0] / class_total[0] if class_total[0] > 0 else 0
+    malignant_acc = 100 * class_correct[1] / class_total[1] if class_total[1] > 0 else 0
+    
+    # Calculate additional metrics if this is test evaluation
+    if len(dataloader) < 10:  # Assuming test set is smaller than validation set
+        from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+        
+        report = classification_report(true_labels, predictions, target_names=['Benign', 'Malignant'])
+        conf_matrix = confusion_matrix(true_labels, predictions)
+        
+        # Try to calculate AUC (may fail if only one class is present)
+        try:
+            auc = roc_auc_score([l[0] for l in true_labels], [p[0] for p in predictions])
+        except Exception as e:
+            auc = None
+            print(f"Could not calculate AUC: {e}")
+        
+        return val_loss, val_acc, benign_acc, malignant_acc, report, conf_matrix, auc
+    
+    return val_loss, val_acc, benign_acc, malignant_acc
 
 # Main execution
 if __name__ == "__main__":
@@ -514,8 +549,11 @@ if __name__ == "__main__":
         print(f"Validation set: {len(X_val)} images")
         print(f"Test set: {len(X_test)} images")
         
-        # Create datasets with augmentation for training
-        train_dataset = MedicalImageDataset(X_train, y_train, transform, augment=True)
+        # Create datasets with class-specific augmentation for training
+        # Oversampling benign class by a factor of 3
+        benign_augment_factor = 3
+        train_dataset = MedicalImageDataset(X_train, y_train, transform, augment=True, 
+                                           benign_augment_factor=benign_augment_factor)
         val_dataset = MedicalImageDataset(X_val, y_val, transform, augment=False)
         test_dataset = MedicalImageDataset(X_test, y_test, transform, augment=False)
         
@@ -526,12 +564,24 @@ if __name__ == "__main__":
         
         # Initialize model
         transformer = VisionTransformer(
-            d_model, n_classes, img_size, patch_size, n_channels, 
+            d_model, img_size, patch_size, n_channels, 
             n_heads, n_layers, dropout_rate
         ).to(device)
         
-        # Loss function and optimizer
-        criterion = nn.CrossEntropyLoss()
+        # Binary Cross-Entropy Loss with Logits
+        # Add class weights if the dataset is imbalanced
+        pos_weight = None
+        if hasattr(train_dataset, 'benign_indices') and hasattr(train_dataset, 'malignant_indices'):
+            # Calculate weights inversely proportional to class frequencies
+            n_benign = len(train_dataset.benign_indices)
+            n_malignant = len(train_dataset.malignant_indices)
+            if n_benign > 0 and n_malignant > 0:
+                pos_weight = torch.tensor([n_benign / n_malignant]).to(device)
+                print(f"Using positive class weight: {pos_weight.item()}")
+        
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        
+        # Optimizer with weight decay
         optimizer = Adam(transformer.parameters(), lr=alpha, weight_decay=weight_decay)
         
         # Learning rate scheduler
@@ -548,6 +598,8 @@ if __name__ == "__main__":
         train_accs = []
         val_losses = []
         val_accs = []
+        benign_accs = []
+        malignant_accs = []
         
         print("Starting training...")
         for epoch in range(epochs):
@@ -555,7 +607,7 @@ if __name__ == "__main__":
             train_loss, train_acc = train_epoch(transformer, train_loader, optimizer, criterion, device)
             
             # Validate
-            val_loss, val_acc = validate(transformer, val_loader, criterion, device)
+            val_loss, val_acc, benign_acc, malignant_acc = validate(transformer, val_loader, criterion, device)
             
             # Update learning rate based on validation loss
             scheduler.step(val_loss)
@@ -565,24 +617,29 @@ if __name__ == "__main__":
             train_accs.append(train_acc)
             val_losses.append(val_loss)
             val_accs.append(val_acc)
+            benign_accs.append(benign_acc)
+            malignant_accs.append(malignant_acc)
             
             # Print progress
             print(f'Epoch {epoch+1}/{epochs}:')
             print(f'  Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
             print(f'  Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+            print(f'  Benign Acc: {benign_acc:.2f}%, Malignant Acc: {malignant_acc:.2f}%')
             
-            # Check if this is the best model so far
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
+            # Check if this is the best model so far - consider both classes
+            # We use the average of benign and malignant accuracy to avoid bias towards majority class
+            current_balanced_acc = (benign_acc + malignant_acc) / 2
+            if current_balanced_acc > best_val_acc:
+                best_val_acc = current_balanced_acc
                 best_val_loss = val_loss
                 patience_counter = 0
                 
                 # Save the best model
                 torch.save(transformer.state_dict(), 'best_model.pth')
-                print(f'  New best model saved with Val Acc: {best_val_acc:.2f}%')
+                print(f'  New best model saved with Balanced Acc: {best_val_acc:.2f}%')
             else:
                 patience_counter += 1
-                print(f'  Validation accuracy did not improve. Patience: {patience_counter}/{patience}')
+                print(f'  Balanced accuracy did not improve. Patience: {patience_counter}/{patience}')
                 
             # Early stopping
             if patience_counter >= patience:
@@ -594,8 +651,22 @@ if __name__ == "__main__":
         
         # Final evaluation on test set
         transformer.eval()
-        test_loss, test_acc = validate(transformer, test_loader, criterion, device)
-        print(f'\nFinal Test Accuracy: {test_acc:.2f}%')
+        test_result = validate(transformer, test_loader, criterion, device)
+        test_loss, test_acc, benign_acc, malignant_acc, report, conf_matrix, auc = test_result
+        
+        print("\nFinal Test Results:")
+        print(f'Overall Accuracy: {test_acc:.2f}%')
+        print(f'Benign Accuracy: {benign_acc:.2f}%')
+        print(f'Malignant Accuracy: {malignant_acc:.2f}%')
+        print(f'Balanced Accuracy: {(benign_acc + malignant_acc) / 2:.2f}%')
+        if auc is not None:
+            print(f'AUC-ROC: {auc:.4f}')
+        
+        print("\nConfusion Matrix:")
+        print(conf_matrix)
+        
+        print("\nClassification Report:")
+        print(report)
     
     except Exception as e:
         print(f"An error occurred: {e}")
