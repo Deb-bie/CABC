@@ -14,6 +14,9 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 from transformers import TFAutoModel
 import tensorflow_addons as tfa
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress warnings
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
@@ -50,16 +53,11 @@ def loading_data(data_dir):
     return np.array(data), np.array(labels_list)
 
 def preprocess_data(data, labels):
-    # DeiT-specific preprocessing
     X_data = np.array(data).astype('float32')
-    X_data = X_data / 255.0  # Scale to [0, 1]
+    X_data = X_data / 255.0
     X_data = (X_data - 0.5) / 0.5  # Normalize to [-1, 1]
-    X_data = X_data.reshape(-1, img_size, img_size, 1)
-    print(f"Data shape after preprocessing: {X_data.shape}")
-    
-    y_data = np.array(labels)
-    
-    return X_data, y_data
+    X_data = np.repeat(X_data[..., np.newaxis], 3, axis=-1)  # Convert to 3-channel
+    return X_data, np.array(labels)
 
 def check_class_balance(y):
     counts = np.bincount(y)
@@ -121,37 +119,26 @@ def create_dataset(X, y, augment=False):
     return ds.shuffle(1000).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
 def create_deit_model():
-    # Load pre-trained DeiT model
-    base_model = TFAutoModel.from_pretrained("facebook/deit-base-patch16-224")
+    # Load model with proper architecture
+    from transformers import TFViTForImageClassification
     
-    # Freeze base model initially
-    base_model.trainable = False
+    base_model = TFViTForImageClassification.from_pretrained(
+        "facebook/deit-base-patch16-224",
+        num_labels=1,  # For binary classification
+        ignore_mismatched_sizes=True
+    )
     
-    inputs = tf.keras.Input(shape=(img_size, img_size, 3))
-    
-    # Convert to channels_first format expected by DeiT
-    x = tf.transpose(inputs, perm=[0, 3, 1, 2])  # (batch, channels, height, width)
-    
-    # Forward pass through DeiT
-    outputs = base_model(pixel_values=x)
-    
-    # Use CLS token output
-    x = outputs.last_hidden_state[:, 0, :]
+    # Freeze encoder layers
+    for layer in base_model.layers[:-4]:
+        layer.trainable = False
     
     # Custom classification head
-    x = layers.Dense(1024, use_bias=False)(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation('relu')(x)
-    x = layers.Dropout(0.5)(x)
-    
-    x = layers.Dense(512, use_bias=False)(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Activation('relu')(x)
+    x = base_model.layers[-2].output
+    x = layers.Dense(512, activation='relu')(x)
     x = layers.Dropout(0.3)(x)
-    
     outputs = layers.Dense(1, activation='sigmoid')(x)
     
-    return tf.keras.Model(inputs, outputs)
+    return tf.keras.Model(inputs=base_model.input, outputs=outputs)
 
 def plot_training_history(history, fold):
     plt.figure(figsize=(12, 5))
