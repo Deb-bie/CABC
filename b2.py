@@ -23,7 +23,7 @@ n_heads = 3
 n_layers = 3
 batch_size = 128
 epochs = 10
-alpha = 0.005
+alpha = 0.0001
 
 # Patch Embeddings
 class PatchEmbedding(nn.Module):
