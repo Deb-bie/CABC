@@ -13,8 +13,9 @@ import io
 data_path = "../../../data/BreaKHis_Total_dataset"  # Original data path preserved
 labels = ['benign', 'malignant']
 
-d_model = 2
-n_classes = 2  # Changed from 10 to 2 to match binary classification (benign/malignant)
+# Fixed: Changed d_model to be divisible by n_heads
+d_model = 12  # Changed from 2 to 12 (divisible by n_heads=3)
+n_classes = 2  # Binary classification (benign/malignant)
 img_size = 32  # Using single value for square images
 patch_size = 16  # Using single value for square patches
 n_channels = 1
