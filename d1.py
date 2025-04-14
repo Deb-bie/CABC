@@ -18,8 +18,8 @@ import tensorflow_hub as hub # type: ignore
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224  # Standard size for DeiT as well
-batch_size = 48
-epochs = 30
+batch_size = 10
+epochs = 10
 
 def loading_data(data_dir):
     data = []
