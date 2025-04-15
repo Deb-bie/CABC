@@ -11,8 +11,8 @@ import datetime
 from tensorflow.keras.optimizers import Adam # type: ignore
 from tensorflow.keras import layers # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau # type: ignore
-from tensorflow.keras.applications import ResNet50 # type: ignore
 import tensorflow_addons as tfa # type: ignore
+import tensorflow_hub as hub # type: ignore
 
 
 # Constants
