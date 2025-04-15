@@ -331,7 +331,7 @@ def train_model():
         )
 
         log_dir = f"logs/Resnet_fold{fold+1}_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         callbacks = [
             EarlyStopping(
                 monitor='val_auc', 
