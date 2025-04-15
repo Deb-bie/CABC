@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
 import seaborn as sns
 import datetime
+import uuid
 from tensorflow.keras.optimizers import Adam # type: ignore
 from tensorflow.keras import layers # type: ignore
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau # type: ignore
@@ -436,7 +437,6 @@ def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
     return y_pred, y_pred_prob_flat
 
 
-
 # def log_images_to_tensorboard(log_dir):
 #     """Create a TensorBoard image logger"""
 #     file_writer = tf.summary.create_file_writer(log_dir + '/images')
@@ -578,7 +578,14 @@ def train_model():
         )
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        log_dir = f"logs/DeiT_fold{fold+1}_{timestamp}"
+        
+        # Add a UUID for absolute uniqueness
+        unique_id = str(uuid.uuid4())[:8]
+        
+        log_dir = f"logs/DeiT_fold{fold+1}_{timestamp}_{unique_id}"
+
+        # Create a unique model filename with UUID to prevent conflicts
+        model_filename = f"DeiT_fold{fold+1}_{timestamp}_{unique_id}.keras"
         
         callbacks = [
             EarlyStopping(
@@ -589,7 +596,7 @@ def train_model():
                 verbose=1
             ),
             ModelCheckpoint(
-                f"DeiT_fold{fold + 1}_{timestamp}.h5", 
+                model_filename, 
                 monitor='val_auc',
                 mode='max',
                 save_best_only=True,
@@ -622,6 +629,9 @@ def train_model():
             callbacks=callbacks,
             class_weight=class_weight
         )
+
+        # Plot training history
+        plot_training_history(history, fold)
 
         # Evaluate on validation set
         val_loss, val_acc, val_auc, val_precision, val_recall = model.evaluate(val_ds)
@@ -670,12 +680,16 @@ def train_model():
     
     # Detailed evaluation with confusion matrix and ROC curve
     final_timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    final_log_dir = f"logs/final_evaluation_{final_timestamp}"
+    final_unique_id = str(uuid.uuid4())[:8]
+    final_log_dir = f"logs/final_evaluation_{final_timestamp}_{final_unique_id}"
     y_pred, y_pred_prob = evaluate_model(best_model, test_ds, labels_test, final_log_dir)
     
-    # Save best model with timestamp to avoid conflicts
-    best_model.save(f'best_histopathology_model_{final_timestamp}.h5', overwrite=True)
-    print(f"Best model saved as 'best_histopathology_model_{final_timestamp}.h5'")
+    # Save best model with timestamp and UUID to prevent conflicts
+    # Use .keras format instead of .h5
+    best_model_filename = f'best_histopathology_model_{final_timestamp}_{final_unique_id}.keras'
+    best_model.save(best_model_filename)
+    print(f"Best model saved as '{best_model_filename}'")
+
 
 
 
