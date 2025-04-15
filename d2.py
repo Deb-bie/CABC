@@ -341,7 +341,7 @@ def train_model():
                 verbose=1
             ),
             ModelCheckpoint(
-                f"ResNet_fold{fold + 1}.h5", 
+                f"ResNet_fold{fold + 1}_{timestamp}.h5", 
                 monitor='val_auc',
                 mode='max',
                 save_best_only=True,
@@ -421,9 +421,12 @@ def train_model():
     final_log_dir = "logs/final_evaluation_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     y_pred, y_pred_prob = evaluate_model(best_model, test_ds, y_test, final_log_dir)
     
+    # Save best model with timestamp
+    final_timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
     # Save best model
-    best_model.save('best_histopathology_model.h5')
-    print("Best model saved as 'best_histopathology_model.h5'")
+    best_model.save('best_histopathology_model_{final_timestamp}.h5')
+    print(f"Best model saved as 'best_histopathology_model_{final_timestamp}.h5'")
 
 
 
