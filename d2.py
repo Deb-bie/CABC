@@ -470,12 +470,23 @@ def train_model():
     # data, labels = loading_data(data_path)
     # X, y = preprocess_data(data, labels)
 
+    # # Check class balance and calculate class weights if needed
+    # class_counts = check_class_balance(y)
+    # if len(np.unique(y)) == 2:  # Binary classification
+    #     class_weight = {
+    #         0: len(y) / (2.0 * np.sum(y == 0)),
+    #         1: len(y) / (2.0 * np.sum(y == 1))
+    #     }
+    #     print(f"Using class weights: {class_weight}")
+    # else:
+    #     class_weight = None
+
     # Check class balance and calculate class weights if needed
-    class_counts = check_class_balance(y)
-    if len(np.unique(y)) == 2:  # Binary classification
+    class_counts = check_class_balance(image_labels)
+    if len(np.unique(image_labels)) == 2:  # Binary classification
         class_weight = {
-            0: len(y) / (2.0 * np.sum(y == 0)),
-            1: len(y) / (2.0 * np.sum(y == 1))
+            0: len(image_labels) / (2.0 * np.sum(image_labels == 0)),
+            1: len(image_labels) / (2.0 * np.sum(image_labels == 1))
         }
         print(f"Using class weights: {class_weight}")
     else:
