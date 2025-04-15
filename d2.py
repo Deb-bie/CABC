@@ -21,7 +21,7 @@ data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
 batch_size = 2
-epochs = 
+epochs = 10
 mixed_precision = True  # Enable mixed precision
 
 
