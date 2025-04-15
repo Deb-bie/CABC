@@ -151,7 +151,7 @@ def train_model():
 
     accs, losses = [], []
 
-    for fold, (train_idx, val_idx) in enumerate(kf.split(X_temp, y_temp):
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X_temp, y_temp)):
         print(f"\n=========== Fold {fold + 1}/5 ===========")
 
         X_train, X_val = X_temp[train_idx], X_temp[val_idx]
