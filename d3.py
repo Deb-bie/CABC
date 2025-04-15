@@ -177,7 +177,9 @@ def focal_loss(gamma=2.0, alpha=0.75):
     gamma: focuses more on hard examples
     """
     def focal_loss_with_logits(logits, targets, alpha, gamma, y_pred):
+        # Cast both targets and predictions to the same dtype
         targets = tf.cast(targets, dtype=tf.float32)
+        y_pred = tf.cast(y_pred, dtype=tf.float32)
         
         # Standard binary cross entropy calculation
         BCE = tf.keras.losses.binary_crossentropy(targets, y_pred)
@@ -471,16 +473,6 @@ def train_model_with_memory_optimizations():
         print(f"Error during training: {e}")
         import traceback
         traceback.print_exc()  # Print full traceback for debugging
-
-
-def train_resnet50_for_comparison():
-    """
-    Train ResNet50 model for comparison with DeiT
-    Can be called after training DeiT to use the same data splits
-    """
-    # Implementation will follow a similar pattern to the DeiT training
-    # but using ResNet50 instead of DeiT
-    pass
 
 
 if __name__ == "__main__":
