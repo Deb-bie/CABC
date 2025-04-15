@@ -4,6 +4,7 @@ import tensorflow as tf
 import datetime
 import uuid
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
 import matplotlib.pyplot as plt
 from tensorflow.keras import layers, models
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, Callback
@@ -310,6 +311,29 @@ def plot_training_history(history):
     plt.close()
 
 
+def evaluate_model(model, test_ds, y_test, epoch=0):
+
+    # Get predictions
+    y_pred_prob = model.predict(test_ds)
+    
+    # Extract probabilities and convert to flat array
+    y_pred_prob_flat = []
+    for batch in y_pred_prob:
+        for prob in batch:
+            y_pred_prob_flat.append(prob)
+    y_pred_prob_flat = np.array(y_pred_prob_flat)[:len(y_test)]
+    
+    # Convert probabilities to class predictions
+    y_pred = (y_pred_prob_flat > 0.5).astype(int)
+    
+    # Print classification report
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=labels))
+    
+    return y_pred, y_pred_prob_flat
+
+
+
 def train_model_with_memory_optimizations():
     # Set random seeds for reproducibility
     np.random.seed(42)
@@ -453,6 +477,8 @@ def train_model_with_memory_optimizations():
         
         for name, value in zip(metric_names, test_metrics):
             print(f"Test {name}: {value:.4f}")
+
+        y_pred, y_pred_prob = evaluate_model(model, test_ds, test_labels)
         
         # Save final model
         final_model_filename = f'final_DeiT_model_{timestamp}_{unique_id}.keras'
