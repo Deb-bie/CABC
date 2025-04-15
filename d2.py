@@ -19,8 +19,8 @@ import tensorflow_hub as hub # type: ignore
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 48
-epochs = 30
+batch_size =1
+epochs = 1
 
 def loading_data(data_dir):
     data = []
