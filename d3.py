@@ -15,8 +15,8 @@ import tensorflow_hub as hub
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224  
-batch_size = 20  
-epochs = 10    
+batch_size = 48  
+epochs = 30    
 mixed_precision = True  
 
 
