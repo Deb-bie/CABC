@@ -1,36 +1,27 @@
 import os
-import cv2 # type: ignore
-import io
 import numpy as np
-import matplotlib.pyplot as plt
 import tensorflow as tf
-from sklearn.model_selection import train_test_split, KFold
-from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
-import seaborn as sns
 import datetime
 import uuid
-from tensorflow.keras.optimizers import Adam # type: ignore
-from tensorflow.keras import layers # type: ignore
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, Callback # type: ignore
-import tensorflow_addons as tfa # type: ignore
-import tensorflow_hub as hub # type: ignore
-
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+from tensorflow.keras import layers, models
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, Callback
+import tensorflow_hub as hub
 
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
-img_size = 224
-batch_size = 2
-epochs = 10
-mixed_precision = True  # Enable mixed precision
+img_size = 224  # Required for DeiT
+batch_size = 8  # Reduced batch size for DeiT
+epochs = 10     # Reduced epochs
+mixed_precision = True  # We'll handle this carefully with the hub model
 
-
-# Enable mixed precision
+# Configure mixed precision globally but handle hub models specially
 if mixed_precision:
     policy = tf.keras.mixed_precision.Policy('mixed_float16')
     tf.keras.mixed_precision.set_global_policy(policy)
-    print('Mixed precision enabled')
-
+    print('Mixed precision enabled (with special handling for hub models)')
 
 # Memory growth for GPU
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -41,7 +32,6 @@ if physical_devices:
         print(f"Found {len(physical_devices)} GPU(s). Memory growth enabled.")
     except Exception as e:
         print(f"Error setting memory growth: {e}")
-
 
 class GPUMemoryCallback(Callback):
     """Callback to monitor GPU memory usage during training"""
@@ -63,18 +53,18 @@ class GPUMemoryCallback(Callback):
         except Exception as e:
             print(f"Error in GPU memory monitoring: {e}")
 
-
 class MemoryCleanupCallback(Callback):
     """Callback to clean up memory after each epoch"""
     def on_epoch_end(self, epoch, logs=None):
         import gc
         gc.collect()
         try:
-            tf.keras.backend.clear_session()
+            # Don't clear the session during training as it can cause issues
+            # Just focus on garbage collection
+            pass
         except:
             pass
         print("Memory cleanup performed")
-
 
 def memory_efficient_loading_data(data_dir):
     """Load image paths instead of actual images to save memory"""
@@ -96,7 +86,6 @@ def memory_efficient_loading_data(data_dir):
     
     return np.array(image_paths), np.array(labels_list)
 
-
 def create_path_dataset(image_paths, labels, batch_size=32, is_training=False):
     """Create a dataset that loads and processes images on-the-fly"""
     # Combine paths and labels
@@ -111,7 +100,7 @@ def create_path_dataset(image_paths, labels, batch_size=32, is_training=False):
         # Resize the image
         img = tf.image.resize(img, [img_size, img_size])
         # Normalize pixel values
-        img = tf.cast(img, tf.float32) / 255.0
+        img = tf.cast(img, tf.float32) / 255.0  # Keep as float32 for hub models
         # Convert to RGB (DeiT expects 3 channels)
         img = tf.image.grayscale_to_rgb(img)
         
@@ -136,24 +125,23 @@ def create_path_dataset(image_paths, labels, batch_size=32, is_training=False):
     
     return dataset
 
-
 def check_class_balance(y):
     unique, counts = np.unique(y, return_counts=True)
     print(f"Class distribution: {dict(zip([labels[i] for i in unique], counts))}")
     return counts
 
-
 def create_deit_model():
     """
-    Create DeiT model with memory optimization techniques
+    Create DeiT model with proper type handling
     """
     print("Loading DeiT model from TensorFlow Hub...")
     
-    # Use the smaller DeiT-Tiny variant to save memory while still comparing with DeiT architecture
+    # Use the smaller DeiT-Tiny variant to save memory
     deit_url = "https://tfhub.dev/sayakpaul/deit_tiny_patch16_224/1"
     
-    # Create model with DeiT base
-    inputs = layers.Input(shape=(img_size, img_size, 3))
+    # Create model with explicit float32 input for the hub model
+    # Hub models typically expect float32 even when mixed precision is enabled
+    inputs = layers.Input(shape=(img_size, img_size, 3), dtype=tf.float32, name='model_input')
     
     # Apply simple preprocessing to match DeiT requirements
     x = tf.keras.applications.imagenet_utils.preprocess_input(inputs, mode='tf')
@@ -162,8 +150,8 @@ def create_deit_model():
     deit_layer = hub.KerasLayer(deit_url, trainable=True)
     x = deit_layer(x)
     
-    # Add classification head
-    x = layers.Dropout(0.3)(x)  # Add dropout to reduce overfitting and memory requirement
+    # Add classification head - after this point mixed precision can be used
+    x = layers.Dropout(0.3)(x)
     outputs = layers.Dense(1, activation='sigmoid')(x)
     
     model = models.Model(inputs, outputs)
@@ -173,6 +161,91 @@ def create_deit_model():
     
     return model
 
+def create_custom_deit_model():
+    """
+    Alternative approach: Create a custom DeiT-inspired model instead of loading from Hub
+    This avoids Hub compatibility issues with mixed precision
+    """
+    print("Creating custom ViT/DeiT-like model (not using Hub)...")
+    
+    # Custom Vision Transformer implementation
+    def mlp(x, hidden_units, dropout_rate):
+        for units in hidden_units:
+            x = layers.Dense(units, activation=tf.nn.gelu)(x)
+            x = layers.Dropout(dropout_rate)(x)
+        return x
+    
+    def create_vit_classifier():
+        # Parameters
+        input_shape = (img_size, img_size, 3)
+        patch_size = 16  # Size of the patches to be extracted from the input images
+        num_patches = (img_size // patch_size) ** 2
+        projection_dim = 192  # Smaller than typical DeiT-Base for memory efficiency
+        num_heads = 3  # Multi-head attention
+        transformer_units = [projection_dim * 2, projection_dim]  # MLP units
+        transformer_layers = 4  # Number of transformer blocks (reduced)
+        
+        # Input
+        inputs = layers.Input(shape=input_shape)
+        
+        # Create patches
+        patches = layers.Conv2D(
+            filters=projection_dim,
+            kernel_size=(patch_size, patch_size),
+            strides=(patch_size, patch_size),
+            padding="VALID",
+        )(inputs)
+        
+        # Reshape patches
+        batch_size = tf.shape(patches)[0]
+        patches = tf.reshape(patches, [batch_size, -1, projection_dim])
+        
+        # Create positional embeddings
+        positions = tf.range(start=0, limit=num_patches, delta=1)
+        pos_embedding = layers.Embedding(
+            input_dim=num_patches, output_dim=projection_dim
+        )(positions)
+        
+        # Add positional embeddings
+        x = patches + pos_embedding
+        
+        # Create multiple transformer blocks
+        for _ in range(transformer_layers):
+            # Layer normalization 1
+            x1 = layers.LayerNormalization(epsilon=1e-6)(x)
+            
+            # Multi-head attention
+            attention_output = layers.MultiHeadAttention(
+                num_heads=num_heads, key_dim=projection_dim // num_heads, dropout=0.1
+            )(x1, x1)
+            
+            # Skip connection 1
+            x2 = layers.Add()([attention_output, x])
+            
+            # Layer normalization 2
+            x3 = layers.LayerNormalization(epsilon=1e-6)(x2)
+            
+            # MLP
+            x3 = mlp(x3, hidden_units=transformer_units, dropout_rate=0.1)
+            
+            # Skip connection 2
+            x = layers.Add()([x3, x2])
+        
+        # Create a [batch_size, projection_dim] tensor
+        representation = layers.LayerNormalization(epsilon=1e-6)(x)
+        representation = layers.GlobalAveragePooling1D()(representation)
+        
+        # Add MLP head
+        features = mlp(representation, hidden_units=[projection_dim, projection_dim // 2], dropout_rate=0.3)
+        
+        # Classification layer
+        outputs = layers.Dense(1, activation="sigmoid")(features)
+        
+        # Create the model
+        model = tf.keras.Model(inputs=inputs, outputs=outputs)
+        return model
+    
+    return create_vit_classifier()
 
 def plot_training_history(history):
     # Plot training & validation accuracy values
@@ -198,7 +271,6 @@ def plot_training_history(history):
     plt.tight_layout()
     plt.savefig('deit_training_history.png')
     plt.close()
-
 
 def train_model_with_memory_optimizations():
     # Set random seeds for reproducibility
@@ -247,7 +319,7 @@ def train_model_with_memory_optimizations():
     test_ds = create_path_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
 
     # Create model with memory-saving techniques
-    print("Creating DeiT model...")
+    print("Creating DeiT-inspired model...")
     
     try:
         # Clear any previous model from memory
@@ -255,8 +327,14 @@ def train_model_with_memory_optimizations():
         import gc
         gc.collect()
         
-        # Create DeiT model
-        model = create_deit_model()
+        # Try to create DeiT model first
+        try:
+            print("Attempting to create hub-based DeiT model with dtype handling...")
+            model = create_deit_model()
+        except Exception as e:
+            print(f"Error creating hub-based model: {e}")
+            print("Falling back to custom DeiT-inspired model...")
+            model = create_custom_deit_model()
         
         # Use a relatively low learning rate for stability
         initial_learning_rate = 1e-5
@@ -353,6 +431,18 @@ def train_model_with_memory_optimizations():
         
     except Exception as e:
         print(f"Error during training: {e}")
+        import traceback
+        traceback.print_exc()  # Print full traceback for debugging
+
+
+def train_resnet50_for_comparison():
+    """
+    Train ResNet50 model for comparison with DeiT
+    Can be called after training DeiT to use the same data splits
+    """
+    # Implementation will follow a similar pattern to the DeiT training
+    # but using ResNet50 instead of DeiT
+    pass
 
 
 if __name__ == "__main__":
