@@ -18,7 +18,7 @@ labels = ['benign', 'malignant']
 img_size = 224  
 batch_size = 48  
 epochs = 30    
-mixed_precision = True  
+mixed_precision = True 
 
 
 # Configure mixed precision globally but handle hub models specially
@@ -91,27 +91,81 @@ class ConfusionMatrixCallback(Callback):
             
         # Get predictions on validation data
         y_pred_probs = self.model.predict(self.validation_data)
-        y_pred = np.where(y_pred_probs > 0.5, 1, 0)
+        # y_pred = np.where(y_pred_probs > 0.5, 1, 0)
         
         # Get true labels from validation dataset
         y_true = []
-        for _, labels_batch in self.validation_data.unbatch().as_numpy_iterator():
-            y_true.append(labels_batch)
-        y_true = np.array(y_true)
+        seen_samples = 0
+        max_samples = 1000
+
+        # Get a fresh iterator
+        for images, labels in self.validation_data.take(max_samples // self.validation_data._batch_size + 1):
+            y_true.extend(labels.numpy())
+            seen_samples += len(labels)
+            if seen_samples >= max_samples:
+                break
+
+        y_true = np.array(y_true[:max_samples])
+
+        # Make sure we have the same number of predictions as true labels
+        y_pred_probs = y_pred_probs[:len(y_true)]
+
+        # Try different thresholds to find more balanced performance
+        thresholds = [0.3, 0.4, 0.5, 0.6, 0.7]
+        best_f1 = -1
+        best_threshold = 0.5
+        best_cm = None
+
+
+        # Find best threshold based on F1 score
+        for threshold in thresholds:
+            y_pred = (y_pred_probs > threshold).astype(int)
+            
+            # Compute confusion matrix for this threshold
+            cm = confusion_matrix(y_true, y_pred)
+            
+            # Calculate F1 score for benign class (if possible)
+            if cm.shape == (2, 2):
+                tn, fp, fn, tp = cm.ravel()
+                
+                # Ensure no division by zero
+                if (tp + fp) > 0 and (tp + fn) > 0:
+                    precision = tp / (tp + fp)
+                    recall = tp / (tp + fn)
+                    
+                    if precision + recall > 0:  # Ensure no division by zero
+                        f1 = 2 * (precision * recall) / (precision + recall)
+                        
+                        # If this is better than our previous best, update
+                        if f1 > best_f1:
+                            best_f1 = f1
+                            best_threshold = threshold
+                            best_cm = cm
+
         
-        # Ensure we have the same number of predictions as true labels
-        y_pred = y_pred[:len(y_true)]
-        
-        # Compute confusion matrix
-        cm = confusion_matrix(y_true, y_pred)
-        
-        # Log confusion matrix as image
-        figure = plot_confusion_matrix(cm, class_names=self.class_names)
-        cm_image = plot_to_image(figure)
-        
-        # Log to TensorBoard
-        with self.file_writer.as_default():
-            tf.summary.image("Confusion Matrix", cm_image, step=epoch)
+        # Use the best threshold's confusion matrix
+        if best_cm is not None:
+            # Log the best threshold
+            with self.file_writer.as_default():
+                tf.summary.scalar("Best Threshold", best_threshold, step=epoch)
+                
+            # Log confusion matrix as image
+            figure = plot_confusion_matrix(best_cm, class_names=self.class_names)
+            cm_image = plot_to_image(figure)
+            
+            # Log to TensorBoard
+            with self.file_writer.as_default():
+                tf.summary.image("Confusion Matrix", cm_image, step=epoch)
+        else:
+            # Fallback to standard threshold if optimization fails
+            y_pred = (y_pred_probs > 0.5).astype(int)
+            cm = confusion_matrix(y_true, y_pred)
+            
+            figure = plot_confusion_matrix(cm, class_names=self.class_names)
+            cm_image = plot_to_image(figure)
+            
+            with self.file_writer.as_default():
+                tf.summary.image("Confusion Matrix", cm_image, step=epoch)
 
 
 class ROCCurveCallback(Callback):
@@ -133,11 +187,21 @@ class ROCCurveCallback(Callback):
         
         # Get true labels from validation dataset
         y_true = []
-        for _, labels_batch in self.validation_data.unbatch().as_numpy_iterator():
-            y_true.append(labels_batch)
-        y_true = np.array(y_true)
+        seen_samples = 0
+        max_samples = 1000
+
+
+        # Get a fresh iterator
+        for images, labels in self.validation_data.take(max_samples // self.validation_data._batch_size + 1):
+            y_true.extend(labels.numpy())
+            seen_samples += len(labels)
+            if seen_samples >= max_samples:
+                break
         
-        # Ensure we have the same number of predictions as true labels
+
+        y_true = np.array(y_true[:max_samples])
+        
+        # Make sure we have the same number of predictions as true labels
         y_pred_probs = y_pred_probs[:len(y_true)]
         
         # Compute ROC curve
@@ -147,6 +211,125 @@ class ROCCurveCallback(Callback):
         # Log to TensorBoard
         with self.file_writer.as_default():
             tf.summary.image("ROC Curve", roc_image, step=epoch)
+
+
+class ThresholdTuningCallback(Callback):
+    """Callback to find optimal threshold during training"""
+    def __init__(self, validation_data, log_dir):
+        super().__init__()
+        self.validation_data = validation_data
+        self.log_dir = log_dir
+        self.file_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, 'thresholds'))
+        
+    def on_epoch_end(self, epoch, logs=None):
+        # Get predictions on validation data
+        y_pred_probs = self.model.predict(self.validation_data)
+        
+        # Get true labels from validation dataset (handle repeated dataset properly)
+        y_true = []
+        seen_samples = 0
+        max_samples = 1000  # Limit to prevent memory issues
+        
+        # Get a fresh iterator
+        for images, labels in self.validation_data.take(max_samples // self.validation_data._batch_size + 1):
+            y_true.extend(labels.numpy())
+            seen_samples += len(labels)
+            if seen_samples >= max_samples:
+                break
+                
+        y_true = np.array(y_true[:max_samples])
+        
+        # Make sure we have the same number of predictions as true labels
+        y_pred_probs = y_pred_probs[:len(y_true)]
+        
+        # Try different thresholds
+        thresholds = np.linspace(0.1, 0.9, 9)
+        
+        # Create plots for precision, recall, f1 for each class at different thresholds
+        figure = plt.figure(figsize=(12, 8))
+        plt.subplot(3, 1, 1)
+        plt.title("Precision at different thresholds")
+        plt.subplot(3, 1, 2)
+        plt.title("Recall at different thresholds")
+        plt.subplot(3, 1, 3)
+        plt.title("F1 score at different thresholds")
+        
+        precision_benign = []
+        recall_benign = []
+        f1_benign = []
+        precision_malignant = []
+        recall_malignant = []
+        f1_malignant = []
+        
+        for threshold in thresholds:
+            y_pred = (y_pred_probs > threshold).astype(int)
+            cm = confusion_matrix(y_true, y_pred)
+            
+            # Extract values from confusion matrix
+            if cm.shape == (2, 2):
+                tn, fp, fn, tp = cm.ravel()
+                
+                # Calculate metrics for benign class (true negatives)
+                # For benign: true negatives are correctly classified benign cases
+                p_benign = tn / (tn + fn) if (tn + fn) > 0 else 0  # Precision for benign
+                r_benign = tn / (tn + fp) if (tn + fp) > 0 else 0  # Recall for benign
+                f1_b = 2 * (p_benign * r_benign) / (p_benign + r_benign) if (p_benign + r_benign) > 0 else 0
+                
+                # Calculate metrics for malignant class (true positives)
+                p_malignant = tp / (tp + fp) if (tp + fp) > 0 else 0  # Precision for malignant
+                r_malignant = tp / (tp + fn) if (tp + fn) > 0 else 0  # Recall for malignant
+                f1_m = 2 * (p_malignant * r_malignant) / (p_malignant + r_malignant) if (p_malignant + r_malignant) > 0 else 0
+                
+                precision_benign.append(p_benign)
+                recall_benign.append(r_benign)
+                f1_benign.append(f1_b)
+                precision_malignant.append(p_malignant)
+                recall_malignant.append(r_malignant)
+                f1_malignant.append(f1_m)
+        
+        # Plot precision
+        plt.subplot(3, 1, 1)
+        plt.plot(thresholds, precision_benign, label='Benign', marker='o')
+        plt.plot(thresholds, precision_malignant, label='Malignant', marker='x')
+        plt.xlabel('Threshold')
+        plt.ylabel('Precision')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Plot recall
+        plt.subplot(3, 1, 2)
+        plt.plot(thresholds, recall_benign, label='Benign', marker='o')
+        plt.plot(thresholds, recall_malignant, label='Malignant', marker='x')
+        plt.xlabel('Threshold')
+        plt.ylabel('Recall')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Plot F1 score
+        plt.subplot(3, 1, 3)
+        plt.plot(thresholds, f1_benign, label='Benign', marker='o')
+        plt.plot(thresholds, f1_malignant, label='Malignant', marker='x')
+        plt.plot(thresholds, [(f_b + f_m)/2 for f_b, f_m in zip(f1_benign, f1_malignant)], 
+                 label='Macro Avg', marker='^', linestyle='--')
+        plt.xlabel('Threshold')
+        plt.ylabel('F1 Score')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Convert to image and log to TensorBoard
+        threshold_image = plot_to_image(figure)
+        with self.file_writer.as_default():
+            tf.summary.image("Threshold Analysis", threshold_image, step=epoch)
+            
+        # Find and log optimal threshold (maximize macro avg F1)
+        avg_f1 = [(f_b + f_m)/2 for f_b, f_m in zip(f1_benign, f1_malignant)]
+        optimal_idx = np.argmax(avg_f1)
+        optimal_threshold = thresholds[optimal_idx]
+        
+        with self.file_writer.as_default():
+            tf.summary.scalar("Optimal Threshold", optimal_threshold, step=epoch)
 
 
 def plot_confusion_matrix(cm, class_names):
@@ -167,6 +350,8 @@ def plot_confusion_matrix(cm, class_names):
     
     # Normalize the confusion matrix
     cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = np.nan_to_num(cm_norm)  # Replace NaN with 0
+    
     
     # Use white text for darker cells, black for lighter cells
     threshold = cm.max() / 2.
@@ -256,6 +441,7 @@ def memory_efficient_loading_data(data_dir):
     
     return np.array(image_paths), np.array(labels_list)
 
+
 def create_path_dataset(image_paths, labels, batch_size=32, is_training=False):
     """Create a dataset that loads and processes images on-the-fly"""
     # Combine paths and labels
@@ -274,9 +460,26 @@ def create_path_dataset(image_paths, labels, batch_size=32, is_training=False):
         # Convert to RGB (DeiT expects 3 channels)
         img = tf.image.grayscale_to_rgb(img)
         
-        # Minimal data augmentation if training to reduce computation
+        # Enhanced data augmentation if training, especially for benign samples
         if is_training:
+            # Basic augmentations
             img = tf.image.random_flip_left_right(img)
+            img = tf.image.random_flip_up_down(img)
+            
+            # Random rotation (creates a more comprehensive augmentation strategy)
+            angle = tf.random.uniform([], -0.2, 0.2)  # Small random rotation
+            img = tf.image.rot90(img, k=tf.cast(tf.random.uniform([], 0, 4), tf.int32))
+            
+            # Random brightness and contrast adjustments
+            img = tf.image.random_brightness(img, 0.1)
+            img = tf.image.random_contrast(img, 0.9, 1.1)
+            
+            # Random crop and resize
+            img = tf.image.random_crop(img, [int(img_size*0.9), int(img_size*0.9), 3])
+            img = tf.image.resize(img, [img_size, img_size])
+            
+            # Ensure values stay in valid range after transformations
+            img = tf.clip_by_value(img, 0.0, 1.0)
         
         return img, label
     
@@ -291,7 +494,112 @@ def create_path_dataset(image_paths, labels, batch_size=32, is_training=False):
         dataset = dataset.shuffle(buffer_size=500)  # Reduced buffer size
     
     dataset = dataset.batch(batch_size)
+    
+    # Repeat the dataset if we're training
+    # This is critical to prevent the "ran out of data" warning
+    if is_training:
+        dataset = dataset.repeat()
+    
     dataset = dataset.prefetch(1)  # Reduced prefetch to save memory
+    
+    return dataset
+
+
+def balanced_path_dataset(image_paths, labels, batch_size=32, is_training=False):
+    """
+    Create a dataset that ensures more balanced sampling between classes
+    """
+    # Separate paths by class
+    benign_mask = labels == 0
+    malignant_mask = labels == 1
+    
+    benign_paths = image_paths[benign_mask]
+    benign_labels = labels[benign_mask]
+    malignant_paths = image_paths[malignant_mask]
+    malignant_labels = labels[malignant_mask]
+    
+    print(f"Benign samples: {len(benign_paths)}")
+    print(f"Malignant samples: {len(malignant_paths)}")
+    
+    # Create separate datasets for each class
+    benign_ds = tf.data.Dataset.from_tensor_slices((benign_paths, benign_labels))
+    malignant_ds = tf.data.Dataset.from_tensor_slices((malignant_paths, malignant_labels))
+    
+    # Function to preprocess images
+    def load_and_preprocess(path, label):
+        # Read the image file
+        img = tf.io.read_file(path)
+        # Decode the image
+        img = tf.io.decode_image(img, channels=1, expand_animations=False)
+        # Resize the image
+        img = tf.image.resize(img, [img_size, img_size])
+        # Normalize pixel values
+        img = tf.cast(img, tf.float32) / 255.0  # Keep as float32 for hub models
+        # Convert to RGB (DeiT expects 3 channels)
+        img = tf.image.grayscale_to_rgb(img)
+        
+        # Apply more aggressive augmentation for training
+        if is_training:
+            # Standard augmentations
+            img = tf.image.random_flip_left_right(img)
+            img = tf.image.random_flip_up_down(img)
+            
+            # Apply more augmentation to the benign class (minority class)
+            if label == 0:
+                # Random rotation
+                img = tf.image.rot90(img, k=tf.cast(tf.random.uniform([], 0, 4), tf.int32))
+                
+                # Random brightness and contrast adjustments
+                img = tf.image.random_brightness(img, 0.2)
+                img = tf.image.random_contrast(img, 0.8, 1.2)
+                
+                # Random crop and resize (zoom effect)
+                img = tf.image.random_crop(img, [int(img_size*0.85), int(img_size*0.85), 3])
+                img = tf.image.resize(img, [img_size, img_size])
+                
+                # Ensure values stay in valid range
+                img = tf.clip_by_value(img, 0.0, 1.0)
+            else:
+                # Less aggressive augmentation for majority class
+                img = tf.image.random_brightness(img, 0.1)
+                img = tf.image.random_contrast(img, 0.9, 1.1)
+        
+        return img, label
+    
+    # Apply preprocessing
+    benign_ds = benign_ds.map(load_and_preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+    malignant_ds = malignant_ds.map(load_and_preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+    
+    # Apply shuffling if training
+    if is_training:
+        benign_ds = benign_ds.shuffle(buffer_size=500)
+        malignant_ds = malignant_ds.shuffle(buffer_size=500)
+    
+    # Calculate sample weight for each class to keep classes balanced
+    # Using the ratio between the two classes for upsampling
+    malignant_to_benign_ratio = len(malignant_paths) / len(benign_paths)
+    
+    # We want to oversample benign cases to address class imbalance
+    # Calculate how many times to repeat benign samples
+    repeat_factor = int(malignant_to_benign_ratio) + 1
+    
+    # Repeat the benign dataset to balance classes
+    if is_training:
+        benign_ds = benign_ds.repeat(repeat_factor)
+        malignant_ds = malignant_ds.repeat()
+    
+    # Sample from both datasets alternately
+    dataset = tf.data.experimental.sample_from_datasets([benign_ds, malignant_ds])
+    
+    # Batch the dataset
+    dataset = dataset.batch(batch_size)
+    
+    # Add repeat if training (this ensures we don't run out of data)
+    if is_training:
+        dataset = dataset.repeat()
+    
+    # Enable prefetching
+    dataset = dataset.prefetch(1)  # Limited prefetch to save memory
     
     return dataset
 
@@ -323,6 +631,8 @@ def create_deit_model():
     x = deit_layer(x)
     
     # Add classification head - after this point mixed precision can be used
+    x = layers.Dropout(0.5)  # Increased dropout for better generalization
+    x = layers.Dense(64, activation='relu')(x)  # Extra dense layer
     x = layers.Dropout(0.3)(x)
     outputs = layers.Dense(1, activation='sigmoid')(x)
     
@@ -334,7 +644,7 @@ def create_deit_model():
     return model
 
 
-def focal_loss(gamma=2.0, alpha=0.75):
+def focal_loss(gamma=3.0, alpha=0.85):
     """
     Focal Loss for addressing class imbalance.
     alpha: weighs the importance of positive class (set higher for the minority class)
@@ -554,9 +864,14 @@ def train_model_with_memory_optimizations():
     print(f"Test set: {test_paths.shape[0]} images")
 
     # Create datasets with smaller batch size for DeiT
-    train_ds = create_path_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
-    val_ds = create_path_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
-    test_ds = create_path_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
+    train_ds = balanced_path_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
+    val_ds = balanced_path_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
+    test_ds = balanced_path_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
+
+
+    # train_ds = create_path_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
+    # val_ds = create_path_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
+    # test_ds = create_path_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
 
     # Create model with memory-saving techniques
     print("Creating DeiT-inspired model...")
@@ -585,7 +900,7 @@ def train_model_with_memory_optimizations():
         model.compile(
             optimizer=tf.keras.optimizers.Adam(initial_learning_rate),
             # loss=tf.keras.losses.BinaryCrossentropy(from_logits=False),
-            loss=focal_loss(gamma=2.0, alpha=0.75),
+            loss=focal_loss(gamma=3.0, alpha=0.85),
             metrics=[
                 'accuracy',
                 tf.keras.metrics.AUC(name='auc'),
@@ -642,7 +957,8 @@ def train_model_with_memory_optimizations():
                 freq=1  # Log every epoch
             ),
             GPUMemoryCallback(),
-            MemoryCleanupCallback()  # Clean up memory after each epoch
+            MemoryCleanupCallback(),  # Clean up memory after each epoch
+            ThresholdTuningCallback()
         ]
 
         # Calculate steps per epoch to limit iterations and save memory
