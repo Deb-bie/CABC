@@ -956,9 +956,12 @@ def train_model_with_memory_optimizations():
                 log_dir=log_dir,
                 freq=1  # Log every epoch
             ),
+            ThresholdTuningCallback(
+                validation_data=val_ds,  # Your validation dataset
+                log_dir=log_dir          # The same log_dir being used for other callbacks
+            )
             GPUMemoryCallback(),
-            MemoryCleanupCallback(),  # Clean up memory after each epoch
-            ThresholdTuningCallback()
+            MemoryCleanupCallback()
         ]
 
         # Calculate steps per epoch to limit iterations and save memory
