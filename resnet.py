@@ -14,12 +14,14 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 from tensorflow.keras.applications import ResNet50 # type: ignore
 import tensorflow_addons as tfa # type: ignore
 
+
 # Constants
 data_path = "../../../data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
 batch_size = 48
 epochs = 30
+
 
 def loading_data(data_dir):
     data = []
@@ -48,6 +50,7 @@ def loading_data(data_dir):
 
     return np.array(data), np.array(labels_list)
 
+
 def preprocess_data(data, labels):
     X_data = np.array(data).astype('float32')
     X_data = (X_data - X_data.mean()) / (X_data.std() + 1e-7) 
@@ -57,6 +60,7 @@ def preprocess_data(data, labels):
     y_data = np.array(labels)
     
     return X_data, y_data
+
 
 def check_class_balance(y):
     unique, counts = np.unique(y, return_counts=True)
@@ -110,7 +114,7 @@ def create_resnet_model():
     # return tf.keras.Model(inputs=input_layer, outputs=output)
 
 
-        # Use ResNet50 with improved architecture
+    # Use ResNet50 with improved architecture
     base_model = ResNet50(
         include_top=False, 
         weights='imagenet', 
@@ -140,38 +144,180 @@ def create_resnet_model():
     return tf.keras.Model(inputs, outputs)
 
 
-def plot_training_history(history, fold):
-    # Plot training & validation accuracy values
-    plt.figure(figsize=(12, 5))
-    
-    plt.subplot(1, 2, 1)
+def plot_training_history(history, fold, log_dir):
+    # Create figure for accuracy plot
+    fig_acc = plt.figure(figsize=(10, 6))
     plt.plot(history.history['accuracy'])
     plt.plot(history.history['val_accuracy'])
     plt.title(f'Model Accuracy - Fold {fold + 1}')
     plt.ylabel('Accuracy')
     plt.xlabel('Epoch')
     plt.legend(['Train', 'Validation'], loc='upper left')
+    plt.tight_layout()
     
-    # Plot training & validation loss values
-    plt.subplot(1, 2, 2)
+    # Create figure for loss plot
+    fig_loss = plt.figure(figsize=(10, 6))
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
     plt.title(f'Model Loss - Fold {fold + 1}')
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
     plt.legend(['Train', 'Validation'], loc='upper left')
+    plt.tight_layout()
+    
+    # Log to TensorBoard
+    with tf.summary.create_file_writer(log_dir + '/training_plots').as_default():
+        # Log accuracy plot
+        buf = io.BytesIO()
+        fig_acc.savefig(buf, format='png')
+        buf.seek(0)
+        img = tf.image.decode_png(buf.getvalue(), channels=4)
+        img = tf.expand_dims(img, 0)
+        tf.summary.image("Accuracy Plot", img, step=0)
+        
+        # Log loss plot
+        buf = io.BytesIO()
+        fig_loss.savefig(buf, format='png')
+        buf.seek(0)
+        img = tf.image.decode_png(buf.getvalue(), channels=4)
+        img = tf.expand_dims(img, 0)
+        tf.summary.image("Loss Plot", img, step=0)
+    
+    # Save locally too
+    fig_acc.savefig(f'history_accuracy_fold{fold+1}.png')
+    fig_loss.savefig(f'history_loss_fold{fold+1}.png')
+    
+    plt.close(fig_acc)
+    plt.close(fig_loss)
+
+
+def log_confusion_matrix_to_tensorboard(y_true, y_pred, log_dir, epoch=0, class_names=None):
+    """Log a confusion matrix to TensorBoard"""
+    if class_names is None:
+        class_names = labels
+        
+    cm = confusion_matrix(y_true, y_pred)
+    
+    # Create figure
+    fig = plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt='d', xticklabels=class_names, yticklabels=class_names, cmap='Blues')
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.tight_layout()
+    
+    # Log to TensorBoard
+    with tf.summary.create_file_writer(log_dir + '/confusion_matrix').as_default():
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img = tf.image.decode_png(buf.getvalue(), channels=4)
+        img = tf.expand_dims(img, 0)
+        tf.summary.image("Confusion Matrix", img, step=epoch)
+    
+    plt.close(fig)
+    return fig
+
+
+def log_roc_curve_to_tensorboard(y_true, y_pred_prob, log_dir, epoch=0):
+    """Log a ROC curve to TensorBoard"""
+    fpr, tpr, _ = roc_curve(y_true, y_pred_prob)
+    roc_auc = auc(fpr, tpr)
+    
+    # Create figure
+    fig = plt.figure(figsize=(10, 8))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    plt.tight_layout()
+    
+    # Log to TensorBoard
+    with tf.summary.create_file_writer(log_dir + '/roc_curve').as_default():
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img = tf.image.decode_png(buf.getvalue(), channels=4)
+        img = tf.expand_dims(img, 0)
+        tf.summary.image("ROC Curve", img, step=epoch)
+    
+    plt.close(fig)
+    return fig
+
+
+def log_classification_report_to_tensorboard(y_true, y_pred, log_dir, epoch=0):
+    """Log classification report as text to TensorBoard"""
+    report = classification_report(y_true, y_pred, target_names=labels)
+    
+    with tf.summary.create_file_writer(log_dir + '/metrics').as_default():
+        tf.summary.text("Classification Report", report, step=epoch)
+
+
+def log_metric_to_tensorboard(log_dir, metric_name, value, epoch=0):
+    """Log a scalar metric to TensorBoard"""
+    with tf.summary.create_file_writer(log_dir + '/metrics').as_default():
+        tf.summary.scalar(metric_name, value, step=epoch)
+
+
+def log_sample_predictions_to_tensorboard(X_test, y_test, y_pred, y_pred_prob, log_dir, num_samples=10, epoch=0):
+    """Log sample predictions with images to TensorBoard"""
+    # Get random indices (but ensure we have some of each class)
+    indices_class0 = np.where(y_test == 0)[0]
+    indices_class1 = np.where(y_test == 1)[0]
+    
+    # Choose samples from each class
+    n_class0 = min(num_samples // 2, len(indices_class0))
+    n_class1 = min(num_samples // 2, len(indices_class1))
+    
+    sample_indices_class0 = np.random.choice(indices_class0, n_class0, replace=False)
+    sample_indices_class1 = np.random.choice(indices_class1, n_class1, replace=False)
+    
+    sample_indices = np.concatenate([sample_indices_class0, sample_indices_class1])
+    
+    # Create figure with subplots
+    n_cols = min(5, num_samples)
+    n_rows = (num_samples + n_cols - 1) // n_cols
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=(15, 3 * n_rows))
+    axs = axs.flatten() if isinstance(axs, np.ndarray) else [axs]
+    
+    for i, idx in enumerate(sample_indices):
+        # Get the image
+        img = X_test[idx].reshape(img_size, img_size)
+        
+        # Plot
+        axs[i].imshow(img, cmap='gray')
+        true_label = labels[y_test[idx]]
+        pred_label = labels[y_pred[idx]]
+        prob = y_pred_prob[idx]
+        color = 'green' if y_test[idx] == y_pred[idx] else 'red'
+        axs[i].set_title(f"True: {true_label}\nPred: {pred_label}\nProb: {prob:.2f}", color=color)
+        axs[i].axis('off')
+    
+    # Hide unused subplots
+    for i in range(len(sample_indices), len(axs)):
+        axs[i].axis('off')
     
     plt.tight_layout()
-    plt.savefig(f'history_fold{fold+1}.png')
-    plt.close()
+    
+    # Log to TensorBoard
+    with tf.summary.create_file_writer(log_dir + '/sample_predictions').as_default():
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img = tf.image.decode_png(buf.getvalue(), channels=4)
+        img = tf.expand_dims(img, 0)
+        tf.summary.image("Sample Predictions", img, step=epoch)
+    
+    plt.close(fig)
 
 
-def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
+def evaluate_model(model, test_ds, X_test, y_test, log_dir, epoch=0):
 
-    # Create image writer for this evaluation
-    tb_image_writer = log_images_to_tensorboard(log_dir)
-
-
+    """Comprehensive model evaluation with TensorBoard logging"""
     # Get predictions
     y_pred_prob = model.predict(test_ds)
     
@@ -188,62 +334,61 @@ def evaluate_model(model, test_ds, y_test, log_dir, epoch=0):
     # Print classification report
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred, target_names=labels))
-    
-    # Confusion matrix
-    cm = confusion_matrix(y_test, y_pred)
-    fig = plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels, cmap='Blues')
-    plt.title('Confusion Matrix')
-    plt.xlabel('Predicted')
-    plt.ylabel('Actual')
-    plt.tight_layout()
-    plt.savefig('final_confusion_matrix.png')
-    # plt.show()
 
-    log_image(tb_image_writer, 'confusion_matrix', fig, step=epoch)
-    
-    # ROC curve
-    fpr, tpr, _ = roc_curve(y_test, y_pred_prob_flat)
-    roc_auc = auc(fpr, tpr)
-    
-    fig = plt.figure(figsize=(8, 6))
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic')
-    plt.legend(loc="lower right")
-    plt.savefig('roc_curve.png')
 
-    log_image(tb_image_writer, 'roc_curve', fig, step=epoch)
-    # plt.show()
+    # Log classification report to TensorBoard
+    log_classification_report_to_tensorboard(y_test, y_pred, log_dir, epoch)
+    
+    # Create and log confusion matrix
+    cm_fig = log_confusion_matrix_to_tensorboard(y_test, y_pred, log_dir, epoch)
+    cm_fig.savefig('final_confusion_matrix.png')
+    
+    # Create and log ROC curve
+    roc_fig = log_roc_curve_to_tensorboard(y_test, y_pred_prob_flat, log_dir, epoch)
+    roc_fig.savefig('roc_curve.png')
+    
+    # Calculate and log additional metrics
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred)
+    recall = recall_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    
+    log_metric_to_tensorboard(log_dir, "Final Accuracy", accuracy, epoch)
+    log_metric_to_tensorboard(log_dir, "Final Precision", precision, epoch)
+    log_metric_to_tensorboard(log_dir, "Final Recall", recall, epoch)
+    log_metric_to_tensorboard(log_dir, "Final F1 Score", f1, epoch)
+    
+    # Log sample predictions
+    log_sample_predictions_to_tensorboard(X_test, y_test, y_pred, y_pred_prob_flat, log_dir, epoch=epoch)
     
     return y_pred, y_pred_prob_flat
+    
 
-
-def log_images_to_tensorboard(log_dir):
-    """Create a TensorBoard image logger"""
-    file_writer = tf.summary.create_file_writer(log_dir + '/images')
-    return file_writer
-
-def log_image(file_writer, name, figure, step=0):
-    """Log a matplotlib figure to TensorBoard"""
-    with file_writer.as_default():
-        # Convert figure to PNG image
-        buffer = io.BytesIO()
-        figure.savefig(buffer, format='png')
-        buffer.seek(0)
-        
-        # Convert PNG buffer to TF image
-        image = tf.image.decode_png(buffer.getvalue(), channels=4)
-        
-        # Add batch dimension and log
-        image = tf.expand_dims(image, 0)
-        tf.summary.image(name, image, step=step)
-        
-    plt.close(figure)
+class EvaluationCallback(tf.keras.callbacks.Callback):
+    """Custom callback to evaluate model and log to TensorBoard during training"""
+    def __init__(self, val_data, X_val, y_val, log_dir, evaluation_frequency=5):
+        super().__init__()
+        self.val_data = val_data
+        self.X_val = X_val
+        self.y_val = y_val
+        self.log_dir = log_dir
+        self.evaluation_frequency = evaluation_frequency
+    
+    def on_epoch_end(self, epoch, logs=None):
+        # Only evaluate every N epochs to save time
+        if (epoch + 1) % self.evaluation_frequency == 0 or epoch == 0:
+            print(f"\nEvaluating and logging metrics to TensorBoard at epoch {epoch+1}...")
+            # Evaluate and log
+            evaluate_model(
+                self.model, 
+                self.val_data, 
+                self.X_val, 
+                self.y_val, 
+                self.log_dir, 
+                epoch=epoch
+            )
 
 
 ### 4. TRAINING FUNCTION ###
@@ -284,8 +429,10 @@ def train_model():
     best_model = None
     best_acc = 0
 
-
-
+    # Tracking metrics
+    fold_results = []
+    best_model = None
+    best_acc = 0
 
     accs, losses = [], []
 
@@ -351,12 +498,16 @@ def train_model():
                 min_lr=1e-6,
                 verbose=1
             ),
-            tf.keras.callbacks.TensorBoard(log_dir=log_dir)
+            tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+            # Add our custom evaluation callback
+            EvaluationCallback(
+                val_ds, 
+                X_val, 
+                y_val, 
+                log_dir, 
+                evaluation_frequency=5  # Evaluate every 5 epochs
+            )
         ]
-
-
-        # logging
-        tb_image_writer = log_images_to_tensorboard(log_dir)
 
 
         # Train model
@@ -368,6 +519,9 @@ def train_model():
             callbacks=callbacks,
             class_weight=class_weight
         )
+
+        # Plot and log training history
+        plot_training_history(history, fold, log_dir)
 
         # Evaluate on validation set
         val_loss, val_acc, val_auc, val_precision, val_recall = model.evaluate(val_ds)
@@ -414,13 +568,26 @@ def train_model():
     print(f"Test Precision: {test_precision:.4f}")
     print(f"Test Recall: {test_recall:.4f}")
     
+    
     # Detailed evaluation with confusion matrix and ROC curve
     final_log_dir = "logs/final_evaluation_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    y_pred, y_pred_prob = evaluate_model(best_model, test_ds, y_test, final_log_dir)
+    y_pred, y_pred_prob = evaluate_model(best_model, test_ds, X_test, y_test, final_log_dir)
+
+
+    # Log final cross-validation summary to TensorBoard
+    with tf.summary.create_file_writer(final_log_dir + '/cross_validation').as_default():
+        for metric in metrics:
+            values = [result[metric] for result in fold_results]
+            tf.summary.scalar(f"mean_{metric}", np.mean(values), step=0)
+            tf.summary.scalar(f"std_{metric}", np.std(values), step=0)
     
     # Save best model
     best_model.save('best_histopathology_model.h5')
     print("Best model saved as 'best_histopathology_model.h5'")
+    print(f"TensorBoard logs saved to {final_log_dir}")
+    print("Run 'tensorboard --logdir logs/' to view the results")
+
+    
 
 
 if __name__ == "__main__":
