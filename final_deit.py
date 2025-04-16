@@ -82,6 +82,7 @@ class ConfusionMatrixCallback(Callback):
         self.class_names = class_names
         self.log_dir = log_dir
         self.freq = freq  # Frequency in epochs
+        self.batch_size = batch_size
         self.file_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, 'cm'))
         
     def on_epoch_end(self, epoch, logs=None):
@@ -99,7 +100,7 @@ class ConfusionMatrixCallback(Callback):
         max_samples = 1000
 
         # Get a fresh iterator
-        for images, labels in self.validation_data.take(max_samples // self.validation_data._batch_size + 1):
+        for images, labels in self.validation_data.take(max_samples // self.batch_size + 1):
             y_true.extend(labels.numpy())
             seen_samples += len(labels)
             if seen_samples >= max_samples:
@@ -175,6 +176,7 @@ class ROCCurveCallback(Callback):
         self.validation_data = validation_data
         self.log_dir = log_dir
         self.freq = freq  # Frequency in epochs
+        self.batch_size = batch_size
         self.file_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, 'roc'))
         
     def on_epoch_end(self, epoch, logs=None):
@@ -192,7 +194,7 @@ class ROCCurveCallback(Callback):
 
 
         # Get a fresh iterator
-        for images, labels in self.validation_data.take(max_samples // self.validation_data._batch_size + 1):
+        for images, labels in self.validation_data.take(max_samples // self.batch_size + 1):
             y_true.extend(labels.numpy())
             seen_samples += len(labels)
             if seen_samples >= max_samples:
@@ -219,6 +221,7 @@ class ThresholdTuningCallback(Callback):
         super().__init__()
         self.validation_data = validation_data
         self.log_dir = log_dir
+        self.batch_size = batch_size
         self.file_writer = tf.summary.create_file_writer(os.path.join(self.log_dir, 'thresholds'))
         
     def on_epoch_end(self, epoch, logs=None):
@@ -231,7 +234,7 @@ class ThresholdTuningCallback(Callback):
         max_samples = 1000  # Limit to prevent memory issues
         
         # Get a fresh iterator
-        for images, labels in self.validation_data.take(max_samples // self.validation_data._batch_size + 1):
+        for images, labels in self.validation_data.take(max_samples // self.batch_size + 1):
             y_true.extend(labels.numpy())
             seen_samples += len(labels)
             if seen_samples >= max_samples:
@@ -949,16 +952,19 @@ def train_model_with_memory_optimizations():
                 validation_data=val_ds,  
                 class_names=labels,
                 log_dir=log_dir,
-                freq=1  # Log every epoch
+                freq=1,  # Log every epoch
+                batch_size=batch_size
             ),
             ROCCurveCallback(
                 validation_data=val_ds,
                 log_dir=log_dir,
-                freq=1  # Log every epoch
+                freq=1,
+                batch_size=batch_size
             ),
             ThresholdTuningCallback(
                 validation_data=val_ds,  # Your validation dataset
-                log_dir=log_dir          # The same log_dir being used for other callbacks
+                log_dir=log_dir,
+                batch_size=batch_size        
             ),
             GPUMemoryCallback(),
             MemoryCleanupCallback()
