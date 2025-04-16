@@ -76,7 +76,7 @@ class MemoryCleanupCallback(Callback):
 
 class ConfusionMatrixCallback(Callback):
     """Callback to log confusion matrix to TensorBoard"""
-    def __init__(self, validation_data, class_names, log_dir, freq=1, batch_size):
+    def __init__(self, validation_data, class_names, log_dir, batch_size, freq=1):
         super().__init__()
         self.validation_data = validation_data
         self.class_names = class_names
@@ -171,7 +171,7 @@ class ConfusionMatrixCallback(Callback):
 
 class ROCCurveCallback(Callback):
     """Callback to log ROC curve to TensorBoard"""
-    def __init__(self, validation_data, log_dir, freq=1, batch_size):
+    def __init__(self, validation_data, log_dir,batch_size, freq=1):
         super().__init__()
         self.validation_data = validation_data
         self.log_dir = log_dir
