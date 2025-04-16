@@ -959,7 +959,7 @@ def train_model_with_memory_optimizations():
             ThresholdTuningCallback(
                 validation_data=val_ds,  # Your validation dataset
                 log_dir=log_dir          # The same log_dir being used for other callbacks
-            )
+            ),
             GPUMemoryCallback(),
             MemoryCleanupCallback()
         ]
