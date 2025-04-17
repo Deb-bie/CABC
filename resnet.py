@@ -16,7 +16,7 @@ import tensorflow_addons as tfa # type: ignore
 
 
 # Constants
-data_path = "../../../data/BreaKHis_Total_dataset"
+data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
 batch_size = 48
