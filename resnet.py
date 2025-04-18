@@ -20,7 +20,7 @@ data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
 batch_size = 20
-epochs = 10
+epochs = 15
 
 
 def loading_data(data_dir):
