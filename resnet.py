@@ -19,7 +19,7 @@ import tensorflow_addons as tfa # type: ignore
 data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 10
+batch_size = 20
 epochs = 10
 
 
@@ -67,7 +67,7 @@ def check_class_balance(y):
     print(f"Class distribution: {dict(zip([labels[i] for i in unique], counts))}")
     return counts
 
-def focal_loss(gamma=2.0, alpha=0.75):
+def focal_loss(gamma=3.0, alpha=0.85):
     """
     Focal Loss for addressing class imbalance.
     alpha: weighs the importance of positive class (set higher for the minority class)
@@ -465,7 +465,7 @@ def train_model():
 
         model.compile(
             optimizer=optimizer, 
-            loss=focal_loss(gamma=2.0, alpha=0.75),
+            loss=focal_loss(gamma=3.0, alpha=0.85),
             metrics=[
                 'accuracy',
                 tf.keras.metrics.AUC(name='auc'),
