@@ -67,7 +67,7 @@ def check_class_balance(y):
     print(f"Class distribution: {dict(zip([labels[i] for i in unique], counts))}")
     return counts
 
-def focal_loss(gamma=3.0, alpha=0.85):
+def focal_loss(gamma=5.0, alpha=1.85):
     """
     Focal Loss for addressing class imbalance.
     alpha: weighs the importance of positive class (set higher for the minority class)
