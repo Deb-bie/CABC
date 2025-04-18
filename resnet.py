@@ -19,7 +19,7 @@ import tensorflow_addons as tfa # type: ignore
 data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 48
+batch_size = 10
 epochs = 10
 
 
@@ -332,7 +332,7 @@ def evaluate_model(model, test_ds, X_test, y_test, log_dir, epoch=0):
     y_pred = (y_pred_prob_flat > 0.5).astype(int)
     
     # Print classification report
-    print("\nClassification Report:")
+    print("\nClassification Report for Test set:")
     print(classification_report(y_test, y_pred, target_names=labels))
 
 
