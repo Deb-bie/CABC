@@ -16,7 +16,7 @@ import io
 data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224  
-batch_size = 10  
+batch_size = 20  
 epochs = 10    
 mixed_precision = True 
 
@@ -647,7 +647,7 @@ def create_deit_model():
     return model
 
 
-def focal_loss(gamma=3.0, alpha=0.85):
+def focal_loss(gamma=5.0, alpha=1.85):
     """
     Focal Loss for addressing class imbalance.
     alpha: weighs the importance of positive class (set higher for the minority class)
@@ -674,33 +674,122 @@ def focal_loss(gamma=3.0, alpha=0.85):
     return loss
 
 
+# def create_custom_deit_model():
+#     """
+#     Alternative approach: Create a custom DeiT-inspired model instead of loading from Hub
+#     This avoids Hub compatibility issues with mixed precision
+#     """
+#     print("Creating custom ViT/DeiT-like model (not using Hub)...")
+    
+#     # Custom Vision Transformer implementation
+#     def mlp(x, hidden_units, dropout_rate):
+#         for units in hidden_units:
+#             x = layers.Dense(units, activation=tf.nn.gelu)(x)
+#             x = layers.Dropout(dropout_rate)(x)
+#         return x
+    
+#     def create_vit_classifier():
+#         # Parameters
+#         input_shape = (img_size, img_size, 3)
+#         patch_size = 16  # Size of the patches to be extracted from the input images
+#         num_patches = (img_size // patch_size) ** 2
+#         projection_dim = 192  # Smaller than typical DeiT-Base for memory efficiency
+#         num_heads = 3  # Multi-head attention
+#         transformer_units = [projection_dim * 2, projection_dim]  # MLP units
+#         transformer_layers = 4  # Number of transformer blocks (reduced)
+        
+#         # Input
+#         inputs = layers.Input(shape=input_shape)
+        
+#         # Create patches
+#         patches = layers.Conv2D(
+#             filters=projection_dim,
+#             kernel_size=(patch_size, patch_size),
+#             strides=(patch_size, patch_size),
+#             padding="VALID",
+#         )(inputs)
+        
+#         # Reshape patches
+#         batch_size = tf.shape(patches)[0]
+#         patches = tf.reshape(patches, [batch_size, -1, projection_dim])
+        
+#         # Create positional embeddings
+#         positions = tf.range(start=0, limit=num_patches, delta=1)
+#         pos_embedding = layers.Embedding(
+#             input_dim=num_patches, output_dim=projection_dim
+#         )(positions)
+        
+#         # Add positional embeddings
+#         x = patches + pos_embedding
+        
+#         # Create multiple transformer blocks
+#         for _ in range(transformer_layers):
+#             # Layer normalization 1
+#             x1 = layers.LayerNormalization(epsilon=1e-6)(x)
+            
+#             # Multi-head attention
+#             attention_output = layers.MultiHeadAttention(
+#                 num_heads=num_heads, key_dim=projection_dim // num_heads, dropout=0.1
+#             )(x1, x1)
+            
+#             # Skip connection 1
+#             x2 = layers.Add()([attention_output, x])
+            
+#             # Layer normalization 2
+#             x3 = layers.LayerNormalization(epsilon=1e-6)(x2)
+            
+#             # MLP
+#             x3 = mlp(x3, hidden_units=transformer_units, dropout_rate=0.1)
+            
+#             # Skip connection 2
+#             x = layers.Add()([x3, x2])
+        
+#         # Create a [batch_size, projection_dim] tensor
+#         representation = layers.LayerNormalization(epsilon=1e-6)(x)
+#         representation = layers.GlobalAveragePooling1D()(representation)
+        
+#         # Add MLP head
+#         features = mlp(representation, hidden_units=[projection_dim, projection_dim // 2], dropout_rate=0.3)
+        
+#         # Classification layer
+#         outputs = layers.Dense(1, activation="sigmoid")(features)
+        
+#         # Create the model
+#         model = tf.keras.Model(inputs=inputs, outputs=outputs)
+#         return model
+    
+#     return create_vit_classifier()
+
+
+
 def create_custom_deit_model():
     """
     Alternative approach: Create a custom DeiT-inspired model instead of loading from Hub
     This avoids Hub compatibility issues with mixed precision
     """
     print("Creating custom ViT/DeiT-like model (not using Hub)...")
-    
+
     # Custom Vision Transformer implementation
     def mlp(x, hidden_units, dropout_rate):
         for units in hidden_units:
             x = layers.Dense(units, activation=tf.nn.gelu)(x)
             x = layers.Dropout(dropout_rate)(x)
         return x
-    
+
     def create_vit_classifier():
-        # Parameters
+        # Parameters adjusted to meet the target parameter counts
         input_shape = (img_size, img_size, 3)
-        patch_size = 16  # Size of the patches to be extracted from the input images
+        patch_size = 16  # Size of the patches
+        projection_dim = 384  # Increased projection dimension
+        num_heads = 6      # Increased number of attention heads
+        transformer_units = [projection_dim * 4, projection_dim]  # Increased MLP units
+        transformer_layers = 6  # Increased number of transformer blocks
+
         num_patches = (img_size // patch_size) ** 2
-        projection_dim = 192  # Smaller than typical DeiT-Base for memory efficiency
-        num_heads = 3  # Multi-head attention
-        transformer_units = [projection_dim * 2, projection_dim]  # MLP units
-        transformer_layers = 4  # Number of transformer blocks (reduced)
-        
+
         # Input
         inputs = layers.Input(shape=input_shape)
-        
+
         # Create patches
         patches = layers.Conv2D(
             filters=projection_dim,
@@ -708,57 +797,61 @@ def create_custom_deit_model():
             strides=(patch_size, patch_size),
             padding="VALID",
         )(inputs)
-        
+
         # Reshape patches
         batch_size = tf.shape(patches)[0]
         patches = tf.reshape(patches, [batch_size, -1, projection_dim])
-        
+
         # Create positional embeddings
         positions = tf.range(start=0, limit=num_patches, delta=1)
         pos_embedding = layers.Embedding(
             input_dim=num_patches, output_dim=projection_dim
         )(positions)
-        
+
         # Add positional embeddings
         x = patches + pos_embedding
-        
+
         # Create multiple transformer blocks
         for _ in range(transformer_layers):
             # Layer normalization 1
             x1 = layers.LayerNormalization(epsilon=1e-6)(x)
-            
+
             # Multi-head attention
             attention_output = layers.MultiHeadAttention(
                 num_heads=num_heads, key_dim=projection_dim // num_heads, dropout=0.1
             )(x1, x1)
-            
+
             # Skip connection 1
             x2 = layers.Add()([attention_output, x])
-            
+
             # Layer normalization 2
             x3 = layers.LayerNormalization(epsilon=1e-6)(x2)
-            
+
             # MLP
             x3 = mlp(x3, hidden_units=transformer_units, dropout_rate=0.1)
-            
+
             # Skip connection 2
             x = layers.Add()([x3, x2])
-        
+
         # Create a [batch_size, projection_dim] tensor
         representation = layers.LayerNormalization(epsilon=1e-6)(x)
         representation = layers.GlobalAveragePooling1D()(representation)
-        
+
         # Add MLP head
-        features = mlp(representation, hidden_units=[projection_dim, projection_dim // 2], dropout_rate=0.3)
-        
-        # Classification layer
+        features = mlp(representation, hidden_units=[projection_dim * 2, projection_dim], dropout_rate=0.5) # Adjusted dropout
         outputs = layers.Dense(1, activation="sigmoid")(features)
-        
+
         # Create the model
         model = tf.keras.Model(inputs=inputs, outputs=outputs)
         return model
-    
-    return create_vit_classifier()
+
+    model = create_vit_classifier()
+    model.summary() # Print the summary to verify the parameter counts
+    return model
+
+
+
+
 
 
 def plot_training_history(history):
