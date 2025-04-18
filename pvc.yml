@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: cabc-data-new
+  name: cabc-data
 spec:
-  storageClassName: rook-ceph-block-central
+  storageClassName: rook-cephfs-central
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   resources:
     requests:
       storage: 150Gi
