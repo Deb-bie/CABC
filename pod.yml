@@ -22,19 +22,19 @@ spec:
       echo "Running as user: $(whoami), UID: $(id -u), GID: $(id -g)"
       # --- Git Repository Setup ---
       echo "Setting up Git repository..."
-      cd ${REPO_PATH}
-      git pull origin main || echo "Repository already exists, continuing"
+      mkdir -p /opt/repo
+      cd /opt/repo
+      git clone --single-branch -b main https://github.com/Deb-bie/CABC.git CABC
       # --- Install dependencies ---
       echo "Installing required dependencies..."
+      cd ${REPO_PATH}
       # pip install dominate visdom wandb
-      # --- Clone CycleGAN repository ---
-      echo "Cloning CABC repository..."
-      git clone https://github.com/Deb-bie/CABC.git
       # --- Install CycleGAN requirements ---
       # echo "Installing CycleGAN requirements..."
       # pip install -r ${REPO_PATH}/pytorch-CycleGAN-and-pix2pix/requirements.txt
+      pip install tensorflow_addons
       sleep infinity
-      
+
     volumeMounts:
     - name: git-repo
       mountPath: /opt/repo
@@ -49,30 +49,10 @@ spec:
         memory: 24Gi
         cpu: "12"
         nvidia.com/gpu: "1"
-  initContainers:
-  - name: init-git-repo
-    image: alpine/git
-    args:
-    - clone
-    - --single-branch
-    - -b
-    - main
-    - https://github.com/Deb-bie/CABC.git
-    - /opt/repo/CABC
-    volumeMounts:
-    - name: git-repo
-      mountPath: /opt/repo
-    resources:
-      limits:
-        memory: 600Mi
-        cpu: 600m
-      requests:
-        memory: 500Mi
-        cpu: 500m
   volumes:
   - name: git-repo
     emptyDir: {}
   - name: cabc-data-volume
     persistentVolumeClaim:
-      claimName: cabc-data-new
+      claimName: cabc-data
   restartPolicy: Never
