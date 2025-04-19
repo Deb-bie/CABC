@@ -780,10 +780,10 @@ def create_custom_deit_model():
         # Parameters adjusted to meet the target parameter counts
         input_shape = (img_size, img_size, 3)
         patch_size = 16  # Size of the patches
-        projection_dim = 400  # Increased projection dimension
-        num_heads = 6      # Increased number of attention heads
+        projection_dim = 192  # Increased projection dimension
+        num_heads = 3      # Increased number of attention heads
         transformer_units = [projection_dim * 4, projection_dim]  # Increased MLP units
-        transformer_layers = 6  # Increased number of transformer blocks
+        transformer_layers = 4  # Increased number of transformer blocks
 
         num_patches = (img_size // patch_size) ** 2
 
