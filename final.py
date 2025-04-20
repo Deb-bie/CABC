@@ -689,7 +689,12 @@ def create_deit_model(trainable_base=False):
     
     # Load the DeiT layer
     deit_layer = hub.KerasLayer(deit_url, trainable=trainable_base)
-    x = deit_layer(x)
+    # x = deit_layer(x)
+
+    deit_outputs = deit_model(x)
+
+    # Extract the class token (first output) for classification
+    x = deit_outputs[0] 
     
     # Add classification head
     x = layers.Dropout(0.5)(x)  # Strong dropout for better generalization
@@ -894,19 +899,9 @@ def train_model_with_memory_optimizations():
     print(f"Test set: {test_paths.shape[0]} images")
 
     # Create datasets with smaller batch size for DeiT
-    train_ds = balanced_path_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
-    val_ds = balanced_path_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
-    test_ds = balanced_path_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
-
-    # Create datasets with smaller batch size for DeiT
     train_ds = balanced_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
     val_ds = balanced_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
     test_ds = balanced_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
-
-
-    # train_ds = create_path_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
-    # val_ds = create_path_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
-    # test_ds = create_path_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
 
     # Create model with memory-saving techniques
     print("Creating DeiT-inspired model...")
@@ -1057,15 +1052,18 @@ def train_model_with_memory_optimizations():
 
 
 
-
-
 # Progressive model fitting
 def progressive_training():
     """Train model in phases to better manage memory and improve performance"""
     # Load and preprocess data
     image_paths, image_labels = memory_efficient_loading_data(data_path)
+    
     train_paths, test_paths, train_labels, test_labels = train_test_split(
-        image_paths, image_labels, test_size=0.2, stratify=image_labels)
+        image_paths, 
+        image_labels, 
+        test_size=0.2, 
+        stratify=image_labels
+    )
     
     # Phase 1: Train with frozen DeiT base
     print("Phase 1: Training classification head only...")
