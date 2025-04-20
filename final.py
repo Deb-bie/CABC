@@ -1102,7 +1102,7 @@ def progressive_training():
             layer.trainable = True
     
     # Use gradient accumulation for effectively larger batch size
-    model_with_accum = GradientAccumulation(model, accumulation_steps=4)
+    model_with_accum = GradientAccumulationModel(model, accumulation_steps=4)
     
     model_with_accum.compile(
         optimizer=tf.keras.optimizers.Adam(5e-5),  # Lower learning rate
