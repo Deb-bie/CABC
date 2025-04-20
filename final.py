@@ -11,6 +11,8 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 import tensorflow_hub as hub
 import io
 import gc
+import math
+
 
 # Constants
 data_path = "./data/BreaKHis_Total_dataset"
@@ -1079,9 +1081,10 @@ def progressive_training():
     )
 
     num_train_samples = len(train_paths) # Assuming you have the number of training samples
-    steps_per_epoch = num_train_samples // batch_size_phase1
-    num_test_samples = test_paths # Assuming you have the number of test samples
-    validation_steps = num_test_samples // batch_size_phase1
+    steps_per_epoch = math.ceil(num_train_samples / batch_size_phase1)
+    num_test_samples = len(test_paths) # Assuming you have the number of test samples
+    validation_steps = math.ceil(num_test_samples / batch_size_phase1)
+
     
     model.fit(
         optimized_dataset(train_paths, train_labels, True, batch_size_phase1),
