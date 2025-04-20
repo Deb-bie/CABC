@@ -14,6 +14,9 @@ import gc
 import math
 
 
+tf.config.run_functions_eagerly(True)
+
+
 # Constants
 data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
@@ -1119,14 +1122,6 @@ def progressive_training():
     )
     
     return model
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
