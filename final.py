@@ -1113,7 +1113,9 @@ def progressive_training():
     model_with_accum.fit(
         optimized_dataset(train_paths, train_labels, True, batch_size=batch_size),
         epochs=epochs,
-        validation_data=optimized_dataset(test_paths, test_labels, False, batch_size)
+        validation_data=optimized_dataset(test_paths, test_labels, False, batch_size),
+        steps_per_epoch=steps_per_epoch,
+        validation_steps=validation_steps
     )
     
     return model
