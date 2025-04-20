@@ -1077,11 +1077,18 @@ def progressive_training():
         loss=weighted_binary_crossentropy,
         metrics=['accuracy', tf.keras.metrics.AUC()]
     )
+
+    num_train_samples = len(train_paths) # Assuming you have the number of training samples
+    steps_per_epoch = num_train_samples // batch_size_phase1
+    num_test_samples = test_paths # Assuming you have the number of test samples
+    validation_steps = num_test_samples // batch_size_phase1
     
     model.fit(
         optimized_dataset(train_paths, train_labels, True, batch_size_phase1),
         epochs=5,
-        validation_data=optimized_dataset(test_paths, test_labels, False, batch_size_phase1)
+        validation_data=optimized_dataset(test_paths, test_labels, False, batch_size_phase1),
+        steps_per_epoch=steps_per_epoch,
+        validation_steps=validation_steps
     )
     
     # Phase 2: Fine-tune the entire model
