@@ -788,8 +788,6 @@ def create_custom_deit_model():
     return model
 
 
-
-
 def plot_training_history(history):
     # Plot training & validation accuracy values
     plt.figure(figsize=(12, 5))
@@ -899,6 +897,11 @@ def train_model_with_memory_optimizations():
     train_ds = balanced_path_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
     val_ds = balanced_path_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
     test_ds = balanced_path_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
+
+    # Create datasets with smaller batch size for DeiT
+    train_ds = balanced_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
+    val_ds = balanced_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
+    test_ds = balanced_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
 
 
     # train_ds = create_path_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
@@ -1054,12 +1057,75 @@ def train_model_with_memory_optimizations():
 
 
 
+
+
+# Progressive model fitting
+def progressive_training():
+    """Train model in phases to better manage memory and improve performance"""
+    # Load and preprocess data
+    image_paths, image_labels = memory_efficient_loading_data(data_path)
+    train_paths, test_paths, train_labels, test_labels = train_test_split(
+        image_paths, image_labels, test_size=0.2, stratify=image_labels)
+    
+    # Phase 1: Train with frozen DeiT base
+    print("Phase 1: Training classification head only...")
+    model = create_deit_model()  # DeiT is frozen by default
+    
+    # Use smaller batch size initially
+    batch_size_phase1 = 16
+    
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(1e-3),
+        loss=weighted_binary_crossentropy,
+        metrics=['accuracy', tf.keras.metrics.AUC()]
+    )
+    
+    model.fit(
+        optimized_dataset(train_paths, train_labels, batch_size_phase1, True),
+        epochs=5,
+        validation_data=optimized_dataset(test_paths, test_labels, batch_size_phase1, False)
+    )
+    
+    # Phase 2: Fine-tune the entire model
+    print("Phase 2: Fine-tuning entire model...")
+    # Unfreeze the DeiT layer
+    for layer in model.layers:
+        if isinstance(layer, hub.KerasLayer):
+            layer.trainable = True
+    
+    # Use gradient accumulation for effectively larger batch size
+    model_with_accum = GradientAccumulation(model, accumulation_steps=4)
+    
+    model_with_accum.compile(
+        optimizer=tf.keras.optimizers.Adam(5e-5),  # Lower learning rate
+        loss=weighted_binary_crossentropy,
+        metrics=['accuracy', tf.keras.metrics.AUC()]
+    )
+    
+    model_with_accum.fit(
+        optimized_dataset(train_paths, train_labels, batch_size=batch_size, True),
+        epochs=epochs,
+        validation_data=optimized_dataset(test_paths, test_labels, batch_size, False)
+    )
+    
+    return model
+
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
     # Clear any existing TF sessions
     tf.keras.backend.clear_session()
     
     # Train with memory optimizations
-    train_model_with_memory_optimizations()
+    # train_model_with_memory_optimizations()
+    progressive_training()
 
 
 
