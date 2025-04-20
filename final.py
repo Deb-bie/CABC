@@ -691,7 +691,7 @@ def create_deit_model(trainable_base=False):
     deit_layer = hub.KerasLayer(deit_url, trainable=trainable_base)
     # x = deit_layer(x)
 
-    deit_outputs = deit_model(x)
+    deit_outputs = deit_layer(x)
 
     # Extract the class token (first output) for classification
     x = deit_outputs[0] 
