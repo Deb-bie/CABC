@@ -492,7 +492,7 @@ def memory_efficient_loading_data(data_dir):
     return np.array(image_paths), np.array(labels_list)
 
 
-def optimized_dataset(image_paths, labels, batch_size=32, is_training=False):
+def optimized_dataset(image_paths, labels, is_training=False, batch_size=32):
     """
     Create an optimized dataset with efficient preprocessing and caching
     """
@@ -1081,9 +1081,9 @@ def progressive_training():
     )
     
     model.fit(
-        optimized_dataset(train_paths, train_labels, batch_size_phase1, True),
+        optimized_dataset(train_paths, train_labels, True, batch_size_phase1),
         epochs=5,
-        validation_data=optimized_dataset(test_paths, test_labels, batch_size_phase1, False)
+        validation_data=optimized_dataset(test_paths, test_labels, False, batch_size_phase1)
     )
     
     # Phase 2: Fine-tune the entire model
@@ -1103,9 +1103,9 @@ def progressive_training():
     )
     
     model_with_accum.fit(
-        optimized_dataset(train_paths, train_labels, batch_size=batch_size, True),
+        optimized_dataset(train_paths, train_labels, True, batch_size=batch_size),
         epochs=epochs,
-        validation_data=optimized_dataset(test_paths, test_labels, batch_size, False)
+        validation_data=optimized_dataset(test_paths, test_labels, False, batch_size)
     )
     
     return model
