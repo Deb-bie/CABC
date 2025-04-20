@@ -1076,7 +1076,7 @@ def progressive_training():
     
     model.compile(
         optimizer=tf.keras.optimizers.Adam(1e-3),
-        loss=weighted_binary_crossentropy,
+        loss=weighted_binary_crossentropy(),
         metrics=['accuracy', tf.keras.metrics.AUC()]
     )
 
@@ -1106,7 +1106,7 @@ def progressive_training():
     
     model_with_accum.compile(
         optimizer=tf.keras.optimizers.Adam(5e-5),  # Lower learning rate
-        loss=weighted_binary_crossentropy,
+        loss=weighted_binary_crossentropy(),
         metrics=['accuracy', tf.keras.metrics.AUC()]
     )
     
