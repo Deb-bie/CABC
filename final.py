@@ -21,7 +21,7 @@ tf.config.run_functions_eagerly(True)
 data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224  
-batch_size = 8  # Reduced from 10 for better memory handling
+batch_size = 16  # Reduced from 10 for better memory handling
 initial_batch_size = 16  # For phase 1 training
 epochs = 10
 mixed_precision = True
@@ -862,201 +862,6 @@ def evaluate_model(model, test_ds, y_test, log_dir=None, epoch=0):
     return y_pred, y_pred_prob_flat
 
 
-def train_model_with_memory_optimizations():
-    # Set random seeds for reproducibility
-    np.random.seed(42)
-    tf.random.set_seed(42)
-    
-    print("Loading image paths...")
-    image_paths, image_labels = memory_efficient_loading_data(data_path)
-    
-    # Check class balance and calculate class weights
-    class_counts = check_class_balance(image_labels)
-    if len(np.unique(image_labels)) == 2:  # Binary classification
-        class_weight = {
-            0: len(image_labels) / (2.0 * np.sum(image_labels == 0)),
-            1: len(image_labels) / (2.0 * np.sum(image_labels == 1))
-        }
-        print(f"Using class weights: {class_weight}")
-    else:
-        class_weight = None
-
-    # Split data - test set 20%
-    train_paths, test_paths, train_labels, test_labels = train_test_split(
-        image_paths,
-        image_labels,
-        test_size=0.2,
-        random_state=42,
-        stratify=image_labels
-    )
-    
-    # Further split training set into train/val - val set 20% of remaining data (16% of total)
-    train_paths, val_paths, train_labels, val_labels = train_test_split(
-        train_paths,
-        train_labels,
-        test_size=0.2,
-        random_state=42,
-        stratify=train_labels
-    )
-
-    print(f"Train set: {train_paths.shape[0]} images")
-    print(f"Validation set: {val_paths.shape[0]} images")
-    print(f"Test set: {test_paths.shape[0]} images")
-
-    # Create datasets with smaller batch size for DeiT
-    train_ds = balanced_dataset(train_paths, train_labels, batch_size=batch_size, is_training=True)
-    val_ds = balanced_dataset(val_paths, val_labels, batch_size=batch_size, is_training=False)
-    test_ds = balanced_dataset(test_paths, test_labels, batch_size=batch_size, is_training=False)
-
-    # Create model with memory-saving techniques
-    print("Creating DeiT-inspired model...")
-    
-    try:
-        # Clear any previous model from memory
-        tf.keras.backend.clear_session()
-        import gc
-        gc.collect()
-        
-        # Try to create DeiT model first
-        try:
-            print("Attempting to create hub-based DeiT model with dtype handling...")
-            model = create_deit_model()
-            model.summary()
-        except Exception as e:
-            print(f"Error creating hub-based model: {e}")
-            print("Falling back to custom DeiT-inspired model...")
-            model = create_custom_deit_model()
-            model.summary()
-        
-        # Use a relatively low learning rate for stability
-        initial_learning_rate = 1e-5
-        
-        # Compile model with binary classification metrics
-        model.compile(
-            optimizer=tf.keras.optimizers.Adam(initial_learning_rate),
-            # loss=tf.keras.losses.BinaryCrossentropy(from_logits=False),
-            loss=focal_loss(gamma=3.0, alpha=0.85),
-            metrics=[
-                'accuracy',
-                tf.keras.metrics.AUC(name='auc'),
-                tf.keras.metrics.Precision(name='precision'),
-                tf.keras.metrics.Recall(name='recall')
-            ]
-        )
-
-        # Create unique model filename and log directory
-        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        unique_id = str(uuid.uuid4())[:8]
-        model_filename = f"DeiT_{timestamp}_{unique_id}.keras"
-        log_dir = f"logs/fit/{timestamp}_{unique_id}"
-        
-        # Define callbacks with memory optimization and TensorBoard
-        callbacks = [
-            TensorBoard(
-                log_dir=log_dir,
-                histogram_freq=1,
-                write_graph=True,
-                update_freq='epoch',
-                profile_batch=0  # Disable profiling to save memory
-            ),
-            EarlyStopping(
-                monitor='val_auc', 
-                patience=4,
-                mode='max',
-                restore_best_weights=True,
-                verbose=1
-            ),
-            ModelCheckpoint(
-                model_filename, 
-                monitor='val_auc',
-                mode='max',
-                save_best_only=True,
-                verbose=1
-            ),
-            ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.5,
-                patience=2,
-                min_lr=1e-6,
-                verbose=1
-            ),
-            ConfusionMatrixCallback(
-                validation_data=val_ds,  
-                class_names=labels,
-                log_dir=log_dir,
-                freq=1,  # Log every epoch
-                batch_size=batch_size
-            ),
-            ROCCurveCallback(
-                validation_data=val_ds,
-                log_dir=log_dir,
-                freq=1,
-                batch_size=batch_size
-            ),
-            ThresholdTuningCallback(
-                validation_data=val_ds,  # Your validation dataset
-                log_dir=log_dir,
-                batch_size=batch_size        
-            ),
-            GPUMemoryCallback(),
-            MemoryCleanupCallback()
-        ]
-
-        # Calculate steps per epoch to limit iterations and save memory
-        # This allows you to see progress faster and potentially stop if there are memory issues
-        steps_per_epoch = min(len(train_paths) // batch_size, 50)  # Cap at 50 steps
-        validation_steps = min(len(val_paths) // batch_size, 20)   # Cap at 20 steps
-        
-        print(f"Training with {steps_per_epoch} steps per epoch and {validation_steps} validation steps")
-        print(f"TensorBoard logs will be saved to {log_dir}")
-        print("Starting training with memory optimizations...")
-        
-        # Train the model
-        history = model.fit(
-            train_ds, 
-            validation_data=val_ds, 
-            epochs=epochs, 
-            callbacks=callbacks,
-            class_weight=class_weight,
-            steps_per_epoch=steps_per_epoch,      # Limit steps to save memory
-            validation_steps=validation_steps      # Limit validation steps
-        )
-        
-        # Plot training history
-        plot_training_history(history)
-        
-        # Evaluate on test set
-        print("\n======= Final Evaluation on Test Set =======")
-        test_metrics = model.evaluate(test_ds, steps=min(len(test_paths) // batch_size, 30))
-        metric_names = ['Loss', 'Accuracy', 'AUC', 'Precision', 'Recall']
-        
-        for name, value in zip(metric_names, test_metrics):
-            print(f"Test {name}: {value:.4f}")
-
-        y_pred, y_pred_prob = evaluate_model(model, test_ds, test_labels, log_dir=log_dir)
-        
-        # Save final model
-        final_model_filename = f'final_DeiT_model_{timestamp}_{unique_id}.keras'
-        model.save(final_model_filename)
-        print(f"Model successfully saved as '{final_model_filename}'")
-        print(f"To view the TensorBoard logs, run: tensorboard --logdir {log_dir}")
-        
-    except tf.errors.ResourceExhaustedError as e:
-        print(f"Memory error during training: {e}")
-        print("\nDeiT models are very memory-intensive. Here are some suggestions:")
-        print("1. Further reduce batch_size (try 4 or 2)")
-        print("2. Use a smaller version of DeiT (DeiT-Tiny is already being used)")
-        print("3. Consider gradient accumulation to simulate larger batch sizes")
-        print("4. Reduce image dimensions (e.g., img_size=160)")
-        print("5. Use a subset of your data for the initial comparison")
-        
-    except Exception as e:
-        print(f"Error during training: {e}")
-        import traceback
-        traceback.print_exc()  # Print full traceback for debugging
-
-
-
 # Progressive model fitting
 def progressive_training():
     """Train model in phases to better manage memory and improve performance"""
@@ -1151,8 +956,6 @@ if __name__ == "__main__":
     # Clear any existing TF sessions
     tf.keras.backend.clear_session()
     
-    # Train with memory optimizations
-    # train_model_with_memory_optimizations()
     progressive_training()
 
 
