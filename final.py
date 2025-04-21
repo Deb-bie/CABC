@@ -190,8 +190,8 @@ class ConfusionMatrixCallback(Callback):
             return
         
         # Get predictions and true labels
-        all_preds = []
-        all_labels = []
+        y_pred_list = []
+        y_true_list = []
         
         # Use a reduced set of validation data to save memory
         max_samples = min(1000, self.batch_size * 50)
@@ -199,21 +199,36 @@ class ConfusionMatrixCallback(Callback):
         
         for x, y in self.validation_data:
             preds = self.model.predict(x, verbose=0)
-            all_preds.append(preds)
-            all_labels.append(y)
+            
+            # Ensure predictions and labels are flattened to 1D arrays
+            if hasattr(preds, 'numpy'):
+                preds = preds.numpy()
+            if hasattr(y, 'numpy'):
+                y = y.numpy()
+                
+            # Flatten arrays to ensure they're 1D
+            preds = preds.flatten()
+            y = y.flatten()
+            
+            # Add to lists
+            y_pred_list.extend(preds)
+            y_true_list.extend(y)
             
             batch_count += 1
             if batch_count * self.batch_size >= max_samples:
                 break
                 
         # Convert to numpy arrays
-        y_pred = np.vstack(all_preds)
-        y_true = np.vstack(all_labels)
+        y_pred = np.array(y_pred_list)
+        y_true = np.array(y_true_list)
         
-        # Make sure we're using the same number of samples for both
+        # Make sure we're using the same number of samples 
         min_samples = min(len(y_pred), len(y_true))
         y_pred = y_pred[:min_samples]
         y_true = y_true[:min_samples]
+        
+        # Convert true labels to integers if they're not already
+        y_true = y_true.astype(int)
         
         # Find optimal threshold
         thresholds = np.linspace(0.1, 0.9, 9)
@@ -223,41 +238,50 @@ class ConfusionMatrixCallback(Callback):
         for threshold in thresholds:
             y_pred_binary = (y_pred > threshold).astype(int)
             
-            # Calculate per-class metrics for this threshold
-            cm = confusion_matrix(y_true, y_pred_binary)
-            
-            if cm.shape == (2, 2):
-                tn, fp, fn, tp = cm.ravel()
+            try:
+                # Calculate per-class metrics for this threshold
+                cm = confusion_matrix(y_true, y_pred_binary)
                 
-                # Calculate F1 scores with safeguards against division by zero
-                precision_0 = tn / (tn + fn) if (tn + fn) > 0 else 0
-                recall_0 = tn / (tn + fp) if (tn + fp) > 0 else 0
-                f1_0 = 2 * precision_0 * recall_0 / (precision_0 + recall_0) if (precision_0 + recall_0) > 0 else 0
-                
-                precision_1 = tp / (tp + fp) if (tp + fp) > 0 else 0
-                recall_1 = tp / (tp + fn) if (tp + fn) > 0 else 0
-                f1_1 = 2 * precision_1 * recall_1 / (precision_1 + recall_1) if (precision_1 + recall_1) > 0 else 0
-                
-                # Calculate macro F1 (average of both classes)
-                macro_f1 = (f1_0 + f1_1) / 2
-                
-                # Update if better
-                if macro_f1 > best_f1:
-                    best_f1 = macro_f1
-                    best_threshold = threshold
+                if cm.shape == (2, 2):
+                    tn, fp, fn, tp = cm.ravel()
+                    
+                    # Calculate F1 scores with safeguards against division by zero
+                    precision_0 = tn / (tn + fn) if (tn + fn) > 0 else 0
+                    recall_0 = tn / (tn + fp) if (tn + fp) > 0 else 0
+                    f1_0 = 2 * precision_0 * recall_0 / (precision_0 + recall_0) if (precision_0 + recall_0) > 0 else 0
+                    
+                    precision_1 = tp / (tp + fp) if (tp + fp) > 0 else 0
+                    recall_1 = tp / (tp + fn) if (tp + fn) > 0 else 0
+                    f1_1 = 2 * precision_1 * recall_1 / (precision_1 + recall_1) if (precision_1 + recall_1) > 0 else 0
+                    
+                    # Calculate macro F1 (average of both classes)
+                    macro_f1 = (f1_0 + f1_1) / 2
+                    
+                    # Update if better
+                    if macro_f1 > best_f1:
+                        best_f1 = macro_f1
+                        best_threshold = threshold
+            except Exception as e:
+                print(f"Error calculating confusion matrix at threshold {threshold}: {e}")
+                continue
         
         # Use best threshold for confusion matrix
         y_pred_best = (y_pred > best_threshold).astype(int)
-        cm = confusion_matrix(y_true, y_pred_best)
         
-        # Log the confusion matrix and best threshold
-        with self.file_writer.as_default():
-            tf.summary.scalar("Best Threshold", best_threshold, step=epoch)
+        try:
+            cm = confusion_matrix(y_true, y_pred_best)
             
-            # Log confusion matrix
-            figure = plot_confusion_matrix(cm, class_names=self.class_names)
-            cm_image = plot_to_image(figure)
-            tf.summary.image("Confusion Matrix", cm_image, step=epoch)
+            # Log the confusion matrix and best threshold
+            with self.file_writer.as_default():
+                tf.summary.scalar("Best Threshold", best_threshold, step=epoch)
+                
+                # Log confusion matrix
+                figure = plot_confusion_matrix(cm, class_names=self.class_names)
+                cm_image = plot_to_image(figure)
+                tf.summary.image("Confusion Matrix", cm_image, step=epoch)
+                
+        except Exception as e:
+            print(f"Error in final confusion matrix calculation: {e}")
 
 
 class ThresholdTuningCallback(Callback):
@@ -276,27 +300,43 @@ class ThresholdTuningCallback(Callback):
             return
             
         # Get predictions on validation data
-        all_preds = []
-        all_labels = []
+        y_pred_list = []
+        y_true_list = []
         max_samples = min(1000, self.batch_size * 50)
         batch_count = 0
         
         for x, y in self.validation_data:
             preds = self.model.predict(x, verbose=0)
-            all_preds.append(preds)
-            all_labels.append(y)
+            
+            # Ensure predictions and labels are flattened to 1D arrays
+            if hasattr(preds, 'numpy'):
+                preds = preds.numpy()
+            if hasattr(y, 'numpy'):
+                y = y.numpy()
+                
+            # Flatten arrays to ensure they're 1D
+            preds = preds.flatten()
+            y = y.flatten()
+            
+            # Add to lists
+            y_pred_list.extend(preds)
+            y_true_list.extend(y)
             
             batch_count += 1
             if batch_count * self.batch_size >= max_samples:
                 break
                 
-        y_pred = np.vstack(all_preds)
-        y_true = np.vstack(all_labels)
+        # Convert to numpy arrays
+        y_pred = np.array(y_pred_list)
+        y_true = np.array(y_true_list)
         
-        # Make sure we're using the same number of samples for both
+        # Make sure we're using the same number of samples 
         min_samples = min(len(y_pred), len(y_true))
         y_pred = y_pred[:min_samples]
         y_true = y_true[:min_samples]
+        
+        # Convert true labels to integers
+        y_true = y_true.astype(int)
         
         # Try different thresholds
         thresholds = np.linspace(0.1, 0.9, 9)
@@ -320,27 +360,38 @@ class ThresholdTuningCallback(Callback):
         
         for threshold in thresholds:
             y_pred_binary = (y_pred > threshold).astype(int)
-            cm = confusion_matrix(y_true, y_pred_binary)
             
-            if cm.shape == (2, 2):
-                tn, fp, fn, tp = cm.ravel()
+            try:
+                cm = confusion_matrix(y_true, y_pred_binary)
                 
-                # Calculate metrics for benign class (class 0)
-                p_benign = tn / (tn + fn) if (tn + fn) > 0 else 0
-                r_benign = tn / (tn + fp) if (tn + fp) > 0 else 0
-                f1_b = 2 * p_benign * r_benign / (p_benign + r_benign) if (p_benign + r_benign) > 0 else 0
-                
-                # Calculate metrics for malignant class (class 1)
-                p_malignant = tp / (tp + fp) if (tp + fp) > 0 else 0
-                r_malignant = tp / (tp + fn) if (tp + fn) > 0 else 0
-                f1_m = 2 * p_malignant * r_malignant / (p_malignant + r_malignant) if (p_malignant + r_malignant) > 0 else 0
-                
-                precision_benign.append(p_benign)
-                recall_benign.append(r_benign)
-                f1_benign.append(f1_b)
-                precision_malignant.append(p_malignant)
-                recall_malignant.append(r_malignant)
-                f1_malignant.append(f1_m)
+                if cm.shape == (2, 2):
+                    tn, fp, fn, tp = cm.ravel()
+                    
+                    # Calculate metrics for benign class (class 0)
+                    p_benign = tn / (tn + fn) if (tn + fn) > 0 else 0
+                    r_benign = tn / (tn + fp) if (tn + fp) > 0 else 0
+                    f1_b = 2 * p_benign * r_benign / (p_benign + r_benign) if (p_benign + r_benign) > 0 else 0
+                    
+                    # Calculate metrics for malignant class (class 1)
+                    p_malignant = tp / (tp + fp) if (tp + fp) > 0 else 0
+                    r_malignant = tp / (tp + fn) if (tp + fn) > 0 else 0
+                    f1_m = 2 * p_malignant * r_malignant / (p_malignant + r_malignant) if (p_malignant + r_malignant) > 0 else 0
+                    
+                    precision_benign.append(p_benign)
+                    recall_benign.append(r_benign)
+                    f1_benign.append(f1_b)
+                    precision_malignant.append(p_malignant)
+                    recall_malignant.append(r_malignant)
+                    f1_malignant.append(f1_m)
+            except Exception as e:
+                print(f"Error calculating metrics at threshold {threshold}: {e}")
+                # Add default values if calculation fails
+                precision_benign.append(0)
+                recall_benign.append(0)
+                f1_benign.append(0)
+                precision_malignant.append(0)
+                recall_malignant.append(0)
+                f1_malignant.append(0)
         
         # Plot precision
         plt.subplot(3, 1, 1)
@@ -384,6 +435,7 @@ class ThresholdTuningCallback(Callback):
         with self.file_writer.as_default():
             tf.summary.image("Threshold Analysis", threshold_image, step=epoch)
             tf.summary.scalar("Optimal Threshold", optimal_threshold, step=epoch)
+
 
 # Helper Functions
 def plot_confusion_matrix(cm, class_names):
@@ -827,21 +879,25 @@ def create_custom_deit_model():
 
 def plot_roc_curve(y_true, y_pred_prob):
     """Create a matplotlib figure containing the ROC curve"""
-    fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
-    roc_auc = auc(fpr, tpr)
-    
-    figure = plt.figure(figsize=(8, 8))
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic')
-    plt.legend(loc="lower right")
-    
-    return figure
-
+    try:
+        fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
+        roc_auc = auc(fpr, tpr)
+        
+        figure = plt.figure(figsize=(8, 8))
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver Operating Characteristic')
+        plt.legend(loc="lower right")
+        
+        return figure
+    except Exception as e:
+        print(f"Error generating ROC curve: {e}")
+        # Return empty figure as fallback
+        return plt.figure(figsize=(8, 8))
 
 def plot_training_history(history):
     # Plot training & validation accuracy values
@@ -870,51 +926,67 @@ def plot_training_history(history):
 
 
 def evaluate_model(model, test_ds, y_test, log_dir=None, epoch=0):
-    # Get predictions
-    y_pred_prob = []
+    # Collect predictions and labels
+    y_pred_list = []
     y_true_list = []
     
-    # Collect predictions and true labels batch by batch
     for x_batch, y_batch in test_ds:
         batch_preds = model.predict(x_batch, verbose=0)
-        y_pred_prob.extend(batch_preds)
-        y_true_list.extend(y_batch.numpy())
+        
+        # Convert to numpy arrays if needed
+        if hasattr(batch_preds, 'numpy'):
+            batch_preds = batch_preds.numpy()
+        if hasattr(y_batch, 'numpy'):
+            y_batch = y_batch.numpy()
+            
+        # Flatten arrays
+        batch_preds = batch_preds.flatten()
+        y_batch = y_batch.flatten()
+        
+        # Add to lists
+        y_pred_list.extend(batch_preds)
+        y_true_list.extend(y_batch)
     
     # Convert to numpy arrays
-    y_pred_prob_flat = np.array(y_pred_prob).flatten()
-    y_true_flat = np.array(y_true_list).flatten()
+    y_pred_prob = np.array(y_pred_list)
+    y_true = np.array(y_true_list)
     
-    # Make sure we're using the same number of samples for both
-    min_samples = min(len(y_pred_prob_flat), len(y_true_flat))
-    y_pred_prob_flat = y_pred_prob_flat[:min_samples]
-    y_true_flat = y_true_flat[:min_samples]
+    # Make sure arrays are the same length
+    min_len = min(len(y_pred_prob), len(y_true))
+    y_pred_prob = y_pred_prob[:min_len]
+    y_true = y_true[:min_len]
+    
+    # Convert true labels to integers
+    y_true = y_true.astype(int)
     
     # Convert probabilities to class predictions
-    y_pred = (y_pred_prob_flat > 0.5).astype(int)
+    y_pred = (y_pred_prob > 0.5).astype(int)
     
     # Print classification report
     print("\nClassification Report:")
-    print(classification_report(y_true_flat, y_pred, target_names=labels))
+    print(classification_report(y_true, y_pred, target_names=labels))
     
     # If a log directory is provided, log confusion matrix and ROC curve to TensorBoard
     if log_dir:
-        # Create confusion matrix figure and log it
-        cm = confusion_matrix(y_true_flat, y_pred)
-        cm_figure = plot_confusion_matrix(cm, class_names=labels)
-        cm_image = plot_to_image(cm_figure)
-        
-        # Create ROC curve figure and log it
-        roc_figure = plot_roc_curve(y_true_flat, y_pred_prob_flat)
-        roc_image = plot_to_image(roc_figure)
-        
-        # Write to TensorBoard
-        file_writer = tf.summary.create_file_writer(os.path.join(log_dir, 'final_evaluation'))
-        with file_writer.as_default():
-            tf.summary.image("Final Confusion Matrix", cm_image, step=0)
-            tf.summary.image("Final ROC Curve", roc_image, step=0)
+        try:
+            # Create confusion matrix figure and log it
+            cm = confusion_matrix(y_true, y_pred)
+            cm_figure = plot_confusion_matrix(cm, class_names=labels)
+            cm_image = plot_to_image(cm_figure)
+            
+            # Create ROC curve figure and log it
+            roc_figure = plot_roc_curve(y_true, y_pred_prob)
+            roc_image = plot_to_image(roc_figure)
+            
+            # Write to TensorBoard
+            file_writer = tf.summary.create_file_writer(os.path.join(log_dir, 'final_evaluation'))
+            with file_writer.as_default():
+                tf.summary.image("Final Confusion Matrix", cm_image, step=0)
+                tf.summary.image("Final ROC Curve", roc_image, step=0)
+        except Exception as e:
+            print(f"Error logging evaluation results to TensorBoard: {e}")
     
-    return y_pred, y_pred_prob_flat
-
+    return y_pred, y_pred_prob
 
 
 # Progressive model fitting
