@@ -1126,7 +1126,7 @@ def progressive_training():
     print("Evaluating model on test set...")
     
     # Use the final trained model for evaluation
-    final_model = model_with_accum.model() if 'model_with_accum' in locals() else model
+    final_model = model_with_accum.model if 'model_with_accum' in locals() else model
     
     # Create test dataset with an appropriate batch size for evaluation
     test_dataset = optimized_dataset(test_paths, test_labels, False, batch_size)
