@@ -22,7 +22,7 @@ data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224  
 batch_size = 16  # Reduced from 10 for better memory handling
-initial_batch_size = 16  # For phase 1 training
+initial_batch_size = 30  # For phase 1 training
 epochs = 10
 mixed_precision = True
 
@@ -904,7 +904,12 @@ def progressive_training():
         optimizer=tf.keras.optimizers.Adam(1e-3),
         # loss=weighted_binary_crossentropy(),
         loss=focal_loss(gamma=3.0, alpha=0.85),
-        metrics=['accuracy', tf.keras.metrics.AUC()]
+        metrics=[
+            'accuracy', 
+            tf.keras.metrics.AUC(),
+            tf.keras.metrics.Precision(name='precision'),
+            tf.keras.metrics.Recall(name='recall')
+        ]
     )
     
 
@@ -914,9 +919,69 @@ def progressive_training():
     validation_steps = math.ceil(num_test_samples / batch_size_phase1)
 
     
+    # Create unique model filename and log directory
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    unique_id = str(uuid.uuid4())[:8]
+    model_filename = f"DeiT_{timestamp}_{unique_id}.keras"
+    log_dir = f"logs/fit/{timestamp}_{unique_id}"
+    
+    # Define callbacks with memory optimization and TensorBoard
+    callbacks = [
+        TensorBoard(
+            log_dir=log_dir,
+            histogram_freq=1,
+            write_graph=True,
+            update_freq='epoch',
+            profile_batch=0  # Disable profiling to save memory
+        ),
+        EarlyStopping(
+            monitor='val_auc', 
+            patience=4,
+            mode='max',
+            restore_best_weights=True,
+            verbose=1
+        ),
+        ModelCheckpoint(
+            model_filename, 
+            monitor='val_auc',
+            mode='max',
+            save_best_only=True,
+            verbose=1
+        ),
+        ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=2,
+            min_lr=1e-6,
+            verbose=1
+        ),
+        ConfusionMatrixCallback(
+            validation_data=val_ds,  
+            class_names=labels,
+            log_dir=log_dir,
+            freq=1,  # Log every epoch
+            batch_size=batch_size
+        ),
+        ROCCurveCallback(
+            validation_data=val_ds,
+            log_dir=log_dir,
+            freq=1,
+            batch_size=batch_size
+        ),
+        ThresholdTuningCallback(
+            validation_data=val_ds,  # Your validation dataset
+            log_dir=log_dir,
+            batch_size=batch_size        
+        ),
+        GPUMemoryCallback(),
+        MemoryCleanupCallback()
+    ]
+
+
     model.fit(
         optimized_dataset(train_paths, train_labels, True, batch_size_phase1),
         epochs=5,
+        callbacks=callbacks,
         validation_data=optimized_dataset(test_paths, test_labels, False, batch_size_phase1),
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps
@@ -933,18 +998,29 @@ def progressive_training():
     model_with_accum = GradientAccumulationModel(model, accumulation_steps=4)
     
     model_with_accum.compile(
-        optimizer=tf.keras.optimizers.Adam(5e-5),  # Lower learning rate
-        loss=weighted_binary_crossentropy(),
-        metrics=['accuracy', tf.keras.metrics.AUC()]
+        optimizer=tf.keras.optimizers.Adam(1e-5),  # Lower learning rate
+        # loss=weighted_binary_crossentropy(),
+        loss=focal_loss(gamma=3.0, alpha=0.85),
+        metrics=[
+            'accuracy', 
+            tf.keras.metrics.AUC(),
+            tf.keras.metrics.Precision(name='precision'),
+            tf.keras.metrics.Recall(name='recall')
+        ]
     )
+
     
-    model_with_accum.fit(
+    history = model_with_accum.fit(
         optimized_dataset(train_paths, train_labels, True, batch_size=batch_size),
         epochs=epochs,
+        callbacks=callbacks,
         validation_data=optimized_dataset(test_paths, test_labels, False, batch_size),
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps
     )
+
+    # Plot training history
+    plot_training_history(history)
 
     # After training completes (after Phase 2), add this evaluation code:
     print("Evaluating model on test set...")
@@ -963,10 +1039,19 @@ def progressive_training():
     )
     
     # Print results in a readable format
-    metrics_names = final_model.metrics_names
+    # metrics_names = final_model.metrics_names
+    metric_names = ['Loss', 'Accuracy', 'AUC', 'Precision', 'Recall']
+    
     print("\nTest Results:")
     for name, value in zip(metrics_names, test_results):
         print(f"{name}: {value:.4f}")
+
+    
+    y_pred, y_pred_prob = evaluate_model(final_model, test_dataset, test_labels, log_dir=log_dir)
+
+    # Save final model
+    final_model_filename = f'final_DeiT_model_{timestamp}_{unique_id}.keras'
+    model.save(final_model_filename)
     
     return final_model, test_results
 
