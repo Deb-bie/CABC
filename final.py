@@ -956,20 +956,21 @@ def progressive_training():
             verbose=1
         ),
         ConfusionMatrixCallback(
-            validation_data=val_ds,  
+            validation_data=optimized_dataset(test_paths, test_labels, False, batch_size_phase1),  
             class_names=labels,
             log_dir=log_dir,
             freq=1,  # Log every epoch
             batch_size=batch_size
         ),
         ROCCurveCallback(
-            validation_data=val_ds,
+            validation_data=optimized_dataset(test_paths, test_labels, False, batch_size_phase1),
             log_dir=log_dir,
             freq=1,
             batch_size=batch_size
         ),
         ThresholdTuningCallback(
-            validation_data=val_ds,  # Your validation dataset
+            validation_data=optimized_dataset(test_paths, test_labels, False, batch_size_phase1),  
+            # Your validation dataset
             log_dir=log_dir,
             batch_size=batch_size        
         ),
