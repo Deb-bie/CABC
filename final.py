@@ -700,9 +700,27 @@ def create_deit_model(trainable_base=False):
 
     # Extract the class token (first output) for classification
     x = deit_outputs[0] 
+
+
+
+    # More complex classification head with batch normalization
+    x = layers.Dense(1024, use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+    x = layers.Dropout(0.5)(x)
+    
+    x = layers.Dense(512, use_bias=False)(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Activation('relu')(x)
+    x = layers.Dropout(0.3)(x)
+    
+
+
+
+
     
     # Add classification head
-    x = layers.Dropout(0.5)(x)  # Strong dropout for better generalization
+    # x = layers.Dropout(0.5)(x)  # Strong dropout for better generalization
     outputs = layers.Dense(1, activation='sigmoid')(x)
     
     model = models.Model(inputs, outputs)
