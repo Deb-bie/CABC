@@ -1082,6 +1082,7 @@ def progressive_training():
         loss=weighted_binary_crossentropy(),
         metrics=['accuracy', tf.keras.metrics.AUC()]
     )
+    
 
     num_train_samples = len(train_paths) # Assuming you have the number of training samples
     steps_per_epoch = math.ceil(num_train_samples / batch_size_phase1)
@@ -1120,8 +1121,30 @@ def progressive_training():
         steps_per_epoch=steps_per_epoch,
         validation_steps=validation_steps
     )
+
+    # After training completes (after Phase 2), add this evaluation code:
+    print("Evaluating model on test set...")
     
-    return model
+    # Use the final trained model for evaluation
+    final_model = model_with_accum.get_model() if 'model_with_accum' in locals() else model
+    
+    # Create test dataset with an appropriate batch size for evaluation
+    test_dataset = optimized_dataset(test_paths, test_labels, False, batch_size)
+    
+    # Evaluate and get results
+    test_results = final_model.evaluate(
+        test_dataset,
+        steps=validation_steps,
+        verbose=1
+    )
+    
+    # Print results in a readable format
+    metrics_names = final_model.metrics_names
+    print("\nTest Results:")
+    for name, value in zip(metrics_names, test_results):
+        print(f"{name}: {value:.4f}")
+    
+    return final_model, test_results
 
 
 if __name__ == "__main__":
