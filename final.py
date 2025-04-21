@@ -210,6 +210,11 @@ class ConfusionMatrixCallback(Callback):
         y_pred = np.vstack(all_preds)
         y_true = np.vstack(all_labels)
         
+        # Make sure we're using the same number of samples for both
+        min_samples = min(len(y_pred), len(y_true))
+        y_pred = y_pred[:min_samples]
+        y_true = y_true[:min_samples]
+        
         # Find optimal threshold
         thresholds = np.linspace(0.1, 0.9, 9)
         best_f1 = -1
@@ -287,6 +292,11 @@ class ThresholdTuningCallback(Callback):
                 
         y_pred = np.vstack(all_preds)
         y_true = np.vstack(all_labels)
+        
+        # Make sure we're using the same number of samples for both
+        min_samples = min(len(y_pred), len(y_true))
+        y_pred = y_pred[:min_samples]
+        y_true = y_true[:min_samples]
         
         # Try different thresholds
         thresholds = np.linspace(0.1, 0.9, 9)
@@ -374,7 +384,6 @@ class ThresholdTuningCallback(Callback):
         with self.file_writer.as_default():
             tf.summary.image("Threshold Analysis", threshold_image, step=epoch)
             tf.summary.scalar("Optimal Threshold", optimal_threshold, step=epoch)
-
 
 # Helper Functions
 def plot_confusion_matrix(cm, class_names):
@@ -816,6 +825,24 @@ def create_custom_deit_model():
     return model
 
 
+def plot_roc_curve(y_true, y_pred_prob):
+    """Create a matplotlib figure containing the ROC curve"""
+    fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
+    roc_auc = auc(fpr, tpr)
+    
+    figure = plt.figure(figsize=(8, 8))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    
+    return figure
+
+
 def plot_training_history(history):
     # Plot training & validation accuracy values
     plt.figure(figsize=(12, 5))
@@ -844,31 +871,40 @@ def plot_training_history(history):
 
 def evaluate_model(model, test_ds, y_test, log_dir=None, epoch=0):
     # Get predictions
-    y_pred_prob = model.predict(test_ds)
+    y_pred_prob = []
+    y_true_list = []
     
-    # Extract probabilities and convert to flat array
-    y_pred_prob_flat = []
-    for batch in y_pred_prob:
-        for prob in batch:
-            y_pred_prob_flat.append(prob)
-    y_pred_prob_flat = np.array(y_pred_prob_flat)[:len(y_test)]
+    # Collect predictions and true labels batch by batch
+    for x_batch, y_batch in test_ds:
+        batch_preds = model.predict(x_batch, verbose=0)
+        y_pred_prob.extend(batch_preds)
+        y_true_list.extend(y_batch.numpy())
+    
+    # Convert to numpy arrays
+    y_pred_prob_flat = np.array(y_pred_prob).flatten()
+    y_true_flat = np.array(y_true_list).flatten()
+    
+    # Make sure we're using the same number of samples for both
+    min_samples = min(len(y_pred_prob_flat), len(y_true_flat))
+    y_pred_prob_flat = y_pred_prob_flat[:min_samples]
+    y_true_flat = y_true_flat[:min_samples]
     
     # Convert probabilities to class predictions
     y_pred = (y_pred_prob_flat > 0.5).astype(int)
     
     # Print classification report
     print("\nClassification Report:")
-    print(classification_report(y_test, y_pred, target_names=labels))
+    print(classification_report(y_true_flat, y_pred, target_names=labels))
     
     # If a log directory is provided, log confusion matrix and ROC curve to TensorBoard
     if log_dir:
         # Create confusion matrix figure and log it
-        cm = confusion_matrix(y_test, y_pred)
+        cm = confusion_matrix(y_true_flat, y_pred)
         cm_figure = plot_confusion_matrix(cm, class_names=labels)
         cm_image = plot_to_image(cm_figure)
         
         # Create ROC curve figure and log it
-        roc_figure = plot_roc_curve(y_test, y_pred_prob_flat)
+        roc_figure = plot_roc_curve(y_true_flat, y_pred_prob_flat)
         roc_image = plot_to_image(roc_figure)
         
         # Write to TensorBoard
@@ -878,6 +914,7 @@ def evaluate_model(model, test_ds, y_test, log_dir=None, epoch=0):
             tf.summary.image("Final ROC Curve", roc_image, step=0)
     
     return y_pred, y_pred_prob_flat
+
 
 
 # Progressive model fitting
@@ -1041,7 +1078,7 @@ def progressive_training():
     
     # Print results in a readable format
     # metrics_names = final_model.metrics_names
-    metric_names = ['Loss', 'Accuracy', 'AUC', 'Precision', 'Recall']
+    # metric_names = ['Loss', 'Accuracy', 'AUC', 'Precision', 'Recall']
     
     print("\nTest Results:")
     for name, value in zip(metrics_names, test_results):
