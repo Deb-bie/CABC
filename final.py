@@ -884,7 +884,8 @@ def progressive_training():
     
     model.compile(
         optimizer=tf.keras.optimizers.Adam(1e-3),
-        loss=weighted_binary_crossentropy(),
+        # loss=weighted_binary_crossentropy(),
+        loss=focal_loss(gamma=3.0, alpha=0.85),
         metrics=['accuracy', tf.keras.metrics.AUC()]
     )
     
