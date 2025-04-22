@@ -21,9 +21,9 @@ tf.config.run_functions_eagerly(True)
 data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224  
-batch_size = 16  # Reduced from 10 for better memory handling
+batch_size = 30  # Reduced from 10 for better memory handling
 initial_batch_size = 30  # For phase 1 training
-epochs = 10
+epochs = 30
 mixed_precision = True
 
 
