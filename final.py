@@ -1149,7 +1149,7 @@ def progressive_training():
     )
     
     # Print results in a readable format
-    # metrics_names = final_model.metrics_names
+    metrics_names = final_model.metrics_names
     # metric_names = ['Loss', 'Accuracy', 'AUC', 'Precision', 'Recall']
     
     print("\nTest Results:")
