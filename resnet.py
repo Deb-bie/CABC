@@ -315,7 +315,7 @@ def log_sample_predictions_to_tensorboard(X_test, y_test, y_pred, y_pred_prob, l
     plt.close(fig)
 
 
-def evaluate_model(model, test_ds, X_test, y_test, log_dir, epoch=0):
+def evaluate_model(model, test_ds, X_test, y_test, history, log_dir, epoch=0):
 
     """Comprehensive model evaluation with TensorBoard logging"""
     # Get predictions
@@ -346,6 +346,10 @@ def evaluate_model(model, test_ds, X_test, y_test, log_dir, epoch=0):
     # Create and log ROC curve
     roc_fig = log_roc_curve_to_tensorboard(y_test, y_pred_prob_flat, log_dir, epoch)
     roc_fig.savefig('roc_curve.png')
+
+    # Create and log Accuracy and loss
+    acc_loss = plot_training_history(history, 0, log_dir)
+    acc_loss.savefig('acc_loss.png')
     
     # Calculate and log additional metrics
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
@@ -386,6 +390,7 @@ class EvaluationCallback(tf.keras.callbacks.Callback):
                 self.val_data, 
                 self.X_val, 
                 self.y_val, 
+                self.history,
                 self.log_dir, 
                 epoch=epoch
             )
@@ -423,11 +428,6 @@ def train_model():
         random_state=42
     )
 
-
-    # Tracking metrics
-    fold_results = []
-    best_model = None
-    best_acc = 0
 
     # Tracking metrics
     fold_results = []
@@ -571,7 +571,7 @@ def train_model():
     
     # Detailed evaluation with confusion matrix and ROC curve
     final_log_dir = "logs/final_evaluation_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    y_pred, y_pred_prob = evaluate_model(best_model, test_ds, X_test, y_test, final_log_dir)
+    y_pred, y_pred_prob = evaluate_model(best_model, test_ds, X_test, y_test, history, final_log_dir)
 
 
     # Log final cross-validation summary to TensorBoard
