@@ -629,11 +629,6 @@ def train_model():
                 y_val, 
                 log_dir, 
                 evaluation_frequency=5  # Evaluate every 5 epochs
-            ),
-            # Add the new test metrics tracking callback
-            TestEvaluationCallback(
-                test_ds,  # Create this earlier in the function
-                log_dir
             )
         ]
 
