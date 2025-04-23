@@ -372,7 +372,7 @@ def evaluate_model(model, test_ds, X_test, y_test, history, log_dir, epoch=0):
 
 class EvaluationCallback(tf.keras.callbacks.Callback):
     """Custom callback to evaluate model and log to TensorBoard during training"""
-    def __init__(self, val_data, X_val, y_val, log_dir, evaluation_frequency=5):
+    def __init__(self, val_data, X_val, y_val,  log_dir, evaluation_frequency=5):
         super().__init__()
         self.val_data = val_data
         self.X_val = X_val
@@ -390,7 +390,7 @@ class EvaluationCallback(tf.keras.callbacks.Callback):
                 self.val_data, 
                 self.X_val, 
                 self.y_val, 
-                self.history,
+                # self.history,
                 self.log_dir, 
                 epoch=epoch
             )
