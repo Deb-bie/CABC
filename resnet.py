@@ -315,7 +315,130 @@ def log_sample_predictions_to_tensorboard(X_test, y_test, y_pred, y_pred_prob, l
     plt.close(fig)
 
 
-def evaluate_model(model, test_ds, X_test, y_test, history, log_dir, epoch=0):
+def log_acc_loss_to_tensorboard():
+
+    """Log a confusion matrix to TensorBoard"""
+    if class_names is None:
+        class_names = labels
+        
+    cm = confusion_matrix(y_true, y_pred)
+    
+    # Create figure
+    fig = plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt='d', xticklabels=class_names, yticklabels=class_names, cmap='Blues')
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.tight_layout()
+    
+    # Log to TensorBoard
+    with tf.summary.create_file_writer(log_dir + '/confusion_matrix').as_default():
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img = tf.image.decode_png(buf.getvalue(), channels=4)
+        img = tf.expand_dims(img, 0)
+        tf.summary.image("Confusion Matrix", img, step=epoch)
+    
+    plt.close(fig)
+    return fig
+
+
+class TestMetricsCallback(tf.keras.callbacks.Callback):
+    """
+    Custom callback to track test metrics during training and log them to TensorBoard.
+    This provides epoch-by-epoch tracking of test performance.
+    """
+    def __init__(self, test_ds, log_dir):
+        super().__init__()
+        self.test_ds = test_ds
+        self.log_dir = log_dir
+        self.test_writer = tf.summary.create_file_writer(f"{log_dir}/test")
+    
+    def on_epoch_end(self, epoch, logs=None):
+        # Evaluate on test set
+        metrics = self.model.evaluate(self.test_ds, verbose=0)
+        
+        # Get metric names
+        metric_names = self.model.metrics_names
+        
+        # Log metrics to TensorBoard
+        with self.test_writer.as_default():
+            for i, metric_name in enumerate(metric_names):
+                tf.summary.scalar(metric_name, metrics[i], step=epoch)
+            
+            # Add custom metrics if needed
+            y_pred = self.model.predict(self.test_ds, verbose=0)
+            # Add any additional custom metrics you want to track
+
+
+
+def create_comparison_plot(history, test_metrics, log_dir):
+    """
+    Create and save a detailed comparison plot of training, validation, and test metrics.
+    Logs the plot to TensorBoard.
+    
+    Args:
+        history: Training history object from model.fit()
+        test_metrics: Dictionary with test metrics {'loss', 'accuracy', etc.}
+        log_dir: Directory for TensorBoard logs
+    """
+    # Create a figure with multiple subplots
+    fig = plt.figure(figsize=(15, 12))
+    
+    # Define the metrics to plot
+    metrics = [
+        ('accuracy', 'Accuracy', 'lower right'),
+        ('loss', 'Loss', 'upper right'),
+        ('auc', 'AUC', 'lower right'),
+        ('precision', 'Precision', 'lower right'),
+        ('recall', 'Recall', 'lower right')
+    ]
+    
+    # Create subplots for each metric
+    for i, (metric_name, title, legend_loc) in enumerate(metrics, 1):
+        plt.subplot(3, 2, i)
+        
+        # Plot training and validation metrics
+        if metric_name in history.history:
+            plt.plot(history.history[metric_name], label=f'Train {title}')
+        
+        val_metric_name = f'val_{metric_name}'
+        if val_metric_name in history.history:
+            plt.plot(history.history[val_metric_name], label=f'Val {title}')
+        
+        # Add test metric as horizontal line
+        if metric_name in test_metrics:
+            plt.axhline(y=test_metrics[metric_name], color='r', linestyle='-', label=f'Test {title}')
+        
+        plt.title(f'Model {title}')
+        plt.ylabel(title)
+        plt.xlabel('Epoch')
+        plt.legend(loc=legend_loc)
+        plt.grid(True)
+    
+    plt.tight_layout()
+    
+    # Save the figure
+    comparison_path = os.path.join(log_dir, 'metrics_comparison.png')
+    fig.savefig(comparison_path)
+    print(f"Comparison plot saved as '{comparison_path}'")
+    
+    # Log to TensorBoard
+    with tf.summary.create_file_writer(log_dir + '/comparison_plots').as_default():
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img = tf.image.decode_png(buf.getvalue(), channels=4)
+        img = tf.expand_dims(img, 0)
+        tf.summary.image("Complete Metrics Comparison", img, step=0)
+    
+    plt.close(fig)
+    return comparison_path
+
+
+
+def evaluate_model(model, test_ds, X_test, y_test, log_dir, epoch=0):
 
     """Comprehensive model evaluation with TensorBoard logging"""
     # Get predictions
@@ -346,10 +469,6 @@ def evaluate_model(model, test_ds, X_test, y_test, history, log_dir, epoch=0):
     # Create and log ROC curve
     roc_fig = log_roc_curve_to_tensorboard(y_test, y_pred_prob_flat, log_dir, epoch)
     roc_fig.savefig('roc_curve.png')
-
-    # Create and log Accuracy and loss
-    acc_loss = plot_training_history(history, 0, log_dir)
-    acc_loss.savefig('acc_loss.png')
     
     # Calculate and log additional metrics
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
@@ -390,7 +509,6 @@ class EvaluationCallback(tf.keras.callbacks.Callback):
                 self.val_data, 
                 self.X_val, 
                 self.y_val, 
-                # self.history,
                 self.log_dir, 
                 epoch=epoch
             )
@@ -427,6 +545,9 @@ def train_model():
         shuffle=True, 
         random_state=42
     )
+
+    # Create test dataset early so we can use it in callbacks
+    test_ds = create_dataset(X_test, y_test)
 
 
     # Tracking metrics
@@ -499,6 +620,8 @@ def train_model():
                 verbose=1
             ),
             tf.keras.callbacks.TensorBoard(log_dir=log_dir),
+            # Add our custom test metrics callback
+            TestMetricsCallback(test_ds, log_dir),
             # Add our custom evaluation callback
             EvaluationCallback(
                 val_ds, 
@@ -506,6 +629,11 @@ def train_model():
                 y_val, 
                 log_dir, 
                 evaluation_frequency=5  # Evaluate every 5 epochs
+            ),
+            # Add the new test metrics tracking callback
+            TestEvaluationCallback(
+                test_ds,  # Create this earlier in the function
+                log_dir
             )
         ]
 
@@ -556,8 +684,11 @@ def train_model():
         values = [result[metric] for result in fold_results]
         print(f"Mean {metric}: {np.mean(values):.4f} (±{np.std(values):.4f})")
 
+    # Create and save comparison plot
+    # create_comparison_plot(best_history, metrics, final_log_dir)
+
     # Create test dataset
-    test_ds = create_dataset(X_test, y_test)
+    # test_ds = create_dataset(X_test, y_test)
     
     # Evaluate best model on test set
     print("\n======= Final Evaluation on Test Set =======")
@@ -567,6 +698,70 @@ def train_model():
     print(f"Test AUC: {test_auc:.4f}")
     print(f"Test Precision: {test_precision:.4f}")
     print(f"Test Recall: {test_recall:.4f}")
+
+
+    # Final evaluation on test set
+    print("\n======= Final Evaluation on Test Set =======")
+    test_loss, test_acc, test_auc, test_precision, test_recall = best_model.evaluate(test_ds)
+    print(f"Test Loss: {test_loss:.4f}")
+    print(f"Test Accuracy: {test_acc:.4f}")
+    print(f"Test AUC: {test_auc:.4f}")
+    print(f"Test Precision: {test_precision:.4f}")
+    print(f"Test Recall: {test_recall:.4f}")
+    
+    # Create a final log directory for the best model
+    final_log_dir = "logs/final_evaluation_" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    
+    # Log final test metrics to TensorBoard
+    with tf.summary.create_file_writer(final_log_dir + '/final_test_metrics').as_default():
+        tf.summary.scalar("Test Loss", test_loss, step=0)
+        tf.summary.scalar("Test Accuracy", test_acc, step=0)
+        tf.summary.scalar("Test AUC", test_auc, step=0)
+        tf.summary.scalar("Test Precision", test_precision, step=0)
+        tf.summary.scalar("Test Recall", test_recall, step=0)
+    
+    # Log final test vs. training curves
+    with tf.summary.create_file_writer(final_log_dir + '/comparison').as_default():
+        # Create comparison plots between train, validation, and test
+        fig = plt.figure(figsize=(12, 10))
+        
+        # Accuracy plot
+        plt.subplot(2, 1, 1)
+        plt.plot(best_history.history['accuracy'], label='Train')
+        plt.plot(best_history.history['val_accuracy'], label='Validation')
+        plt.axhline(y=test_acc, color='r', linestyle='-', label='Test')
+        plt.title('Model Accuracy Comparison')
+        plt.ylabel('Accuracy')
+        plt.xlabel('Epoch')
+        plt.legend(loc='lower right')
+        plt.grid(True)
+        
+        # Loss plot
+        plt.subplot(2, 1, 2)
+        plt.plot(best_history.history['loss'], label='Train')
+        plt.plot(best_history.history['val_loss'], label='Validation')
+        plt.axhline(y=test_loss, color='r', linestyle='-', label='Test')
+        plt.title('Model Loss Comparison')
+        plt.ylabel('Loss')
+        plt.xlabel('Epoch')
+        plt.legend(loc='upper right')
+        plt.grid(True)
+        
+        plt.tight_layout()
+        
+        # Save the plot
+        plt.savefig('train_val_test_comparison.png')
+        print("Comparison plot saved as 'train_val_test_comparison.png'")
+        
+        # Log the plot to TensorBoard
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        img = tf.image.decode_png(buf.getvalue(), channels=4)
+        img = tf.expand_dims(img, 0)
+        tf.summary.image("Train/Val/Test Comparison", img, step=0)
+        
+        plt.close(fig)
     
     
     # Detailed evaluation with confusion matrix and ROC curve
@@ -581,6 +776,9 @@ def train_model():
             tf.summary.scalar(f"mean_{metric}", np.mean(values), step=0)
             tf.summary.scalar(f"std_{metric}", np.std(values), step=0)
     
+
+
+
     # Save best model
     best_model.save('best_histopathology_model.h5')
     print("Best model saved as 'best_histopathology_model.h5'")
