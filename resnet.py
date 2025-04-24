@@ -19,8 +19,8 @@ import tensorflow_addons as tfa # type: ignore
 data_path = "./data/BreaKHis_Total_dataset"
 labels = ['benign', 'malignant']
 img_size = 224
-batch_size = 30
-epochs = 15
+batch_size = 10
+epochs = 10
 
 
 def loading_data(data_dir):
